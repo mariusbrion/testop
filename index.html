@@ -1,3 +1,12 @@
+Bien sûr ! Voici le code complet du fichier `index.html` qui intègre toutes les corrections et améliorations que nous avons discutées :
+
+1.  **Icônes personnalisées** pour chaque type de lieu (arrêts de bus, écoles, etc.).
+2.  Le **panneau de recherche se cache** après une recherche réussie.
+3.  Un bouton "**Nouvelle Recherche**" apparaît pour relancer une recherche.
+
+Copiez-collez simplement l'intégralité de ce code dans votre fichier `index.html`.
+
+```html
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -7,6 +16,10 @@
     
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Ajout de Font Awesome et Awesome Markers CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css" />
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -56,6 +69,11 @@
         }
         
         .hidden { display: none; }
+
+        /* Surcharge pour que les popups Leaflet aient une meilleure apparence avec Font Awesome */
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+        }
     </style>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50">
@@ -66,13 +84,18 @@
                 🌍 OSM Data Explorer
             </h1>
             <p class="text-lg md:text-xl opacity-95 max-w-3xl mx-auto md:mx-0 leading-relaxed">
-                Décrivez ce que vous voulez voir en langage naturel (ex: "bus stops in Bordeaux" ou "schools and parks in Paris") et regardez-le apparaître sur une belle carte Voyager.
+                Décrivez ce que vous voulez voir en langage naturel et regardez-le apparaître sur une belle carte Voyager.
             </p>
             <p class="text-sm md:text-base mt-4 opacity-80 italic">
                 Récupère des données en temps réel via l'API Overpass. Le zoom s'ajuste automatiquement!
             </p>
         </div>
     </header>
+
+    <!-- Bouton pour une nouvelle recherche -->
+    <button id="newSearchButton" class="hidden absolute top-28 left-4 z-[1000] bg-white/90 backdrop-blur-md shadow-lg rounded-lg p-3 text-gray-700 font-semibold hover:bg-gray-50 transition-transform hover:scale-105">
+        <i class="fa-solid fa-magnifying-glass mr-2"></i> Nouvelle Recherche
+    </button>
 
     <!-- Map Container -->
     <div id="map"></div>
@@ -121,9 +144,6 @@
                         bus, stop, school, university, college, pathway, footway, sidewalk, cycleway, bike, 
                         restaurant, cafe, bar, park, hospital, clinic, shop, store, atm, bank, hotel
                     </p>
-                    <p class="text-gray-600 text-xs italic mt-2">
-                        Les sujets ne sont pas sensibles à la casse et peuvent être combinés (ex: "bus and school in Tokyo").
-                    </p>
                 </div>
             </div>
         </div>
@@ -157,51 +177,29 @@
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Ajout de la bibliothèque Awesome Markers JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.min.js"></script>
     
     <script>
         // Configuration
         const topicMappings = {
-            bus: '["highway"="bus_stop"]',
-            stop: '["highway"="bus_stop"]',
-            school: '["amenity"="school"]',
-            university: '["amenity"="university"]',
-            college: '["amenity"="college"]',
-            pathway: '["highway"="pathway"]',
-            footway: '["highway"="footway"]',
-            sidewalk: '["highway"="footway"]',
-            cycleway: '["highway"="cycleway"]',
-            bike: '["highway"="cycleway"]',
-            restaurant: '["amenity"="restaurant"]',
-            cafe: '["amenity"="cafe"]',
-            bar: '["amenity"="bar"]',
+            bus: '["highway"="bus_stop"]', stop: '["highway"="bus_stop"]',
+            school: '["amenity"="school"]', university: '["amenity"="university"]', college: '["amenity"="college"]',
+            pathway: '["highway"="pathway"]', footway: '["highway"="footway"]', sidewalk: '["highway"="footway"]',
+            cycleway: '["highway"="cycleway"]', bike: '["highway"="cycleway"]',
+            restaurant: '["amenity"="restaurant"]', cafe: '["amenity"="cafe"]', bar: '["amenity"="bar"]',
             park: '["leisure"="park"]',
-            hospital: '["amenity"="hospital"]',
-            clinic: '["amenity"="clinic"]',
-            // CORRECTION: Syntaxe correcte pour rechercher n'importe quelle boutique.
-            // On retire les guillemets autour de "shop".
-            shop: '[shop]',
-            store: '[shop]',
-            atm: '["amenity"="atm"]',
-            bank: '["amenity"="bank"]',
+            hospital: '["amenity"="hospital"]', clinic: '["amenity"="clinic"]',
+            shop: '[shop]', store: '[shop]',
+            atm: '["amenity"="atm"]', bank: '["amenity"="bank"]',
             hotel: '["tourism"="hotel"]',
         };
 
         // Initialize map
-        const map = L.map('map').setView([51.505, -0.09], 13);
+        const map = L.map('map').setView([48.8566, 2.3522], 13);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
         }).addTo(map);
-
-        // Fix Leaflet icons
-        const iconRetinaUrl = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png';
-        const iconUrl = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png';
-        const shadowUrl = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png';
-        
-        L.Icon.Default.mergeOptions({
-            iconRetinaUrl,
-            iconUrl,
-            shadowUrl,
-        });
 
         // Global variables
         let markers = [];
@@ -216,60 +214,48 @@
         const resultsCounter = document.getElementById('resultsCounter');
         const resultCount = document.getElementById('resultCount');
         const fitButton = document.getElementById('fitButton');
+        const searchPanel = document.querySelector('.search-panel');
+        const newSearchButton = document.getElementById('newSearchButton');
+
+        // Fonction pour choisir une icône personnalisée en fonction des tags
+        function getIconForFeature(tags) {
+            if (tags.highway === 'bus_stop') return L.AwesomeMarkers.icon({ icon: 'bus', prefix: 'fa', markerColor: 'blue' });
+            if (tags.amenity === 'school' || tags.amenity === 'college' || tags.amenity === 'university') return L.AwesomeMarkers.icon({ icon: 'school', prefix: 'fa', markerColor: 'green' });
+            if (tags.amenity === 'restaurant') return L.AwesomeMarkers.icon({ icon: 'utensils', prefix: 'fa', markerColor: 'orange' });
+            if (tags.amenity === 'cafe') return L.AwesomeMarkers.icon({ icon: 'coffee', prefix: 'fa', markerColor: 'cadetblue' });
+            if (tags.amenity === 'bar') return L.AwesomeMarkers.icon({ icon: 'martini-glass', prefix: 'fa', markerColor: 'darkred' });
+            if (tags.leisure === 'park') return L.AwesomeMarkers.icon({ icon: 'tree', prefix: 'fa', markerColor: 'darkgreen' });
+            if (tags.amenity === 'hospital' || tags.amenity === 'clinic') return L.AwesomeMarkers.icon({ icon: 'kit-medical', prefix: 'fa', markerColor: 'red' });
+            if (tags.shop) return L.AwesomeMarkers.icon({ icon: 'store', prefix: 'fa', markerColor: 'purple' });
+            if (tags.amenity === 'bank') return L.AwesomeMarkers.icon({ icon: 'building-columns', prefix: 'fa', markerColor: 'darkblue' });
+            if (tags.amenity === 'atm') return L.AwesomeMarkers.icon({ icon: 'money-bill-wave', prefix: 'fa', markerColor: 'darkgreen' });
+            if (tags.tourism === 'hotel') return L.AwesomeMarkers.icon({ icon: 'bed', prefix: 'fa', markerColor: 'beige' });
+            return L.AwesomeMarkers.icon({ icon: 'info-circle', prefix: 'fa', markerColor: 'gray' }); // Icône par défaut
+        }
 
         // Parse query function
         function parseQuery(query) {
             const lower = query.toLowerCase().trim();
             const inMatch = lower.match(/(.+?)\s+in\s+(.+)$/i);
+            if (!inMatch) throw new Error('Format de requête: "topics in city", ex: "bus stops in Bordeaux"');
+            const [_, topicPart, cityPart] = inMatch;
+            if (!topicPart.trim() || !cityPart.trim()) throw new Error('Le sujet et la ville sont requis.');
             
-            if (!inMatch) {
-                throw new Error('Format de requête: "topics in city", ex: "bus stops in Bordeaux"');
-            }
-            
-            const topicPart = inMatch[1].trim();
-            const cityPart = inMatch[2].trim();
-            
-            if (!topicPart || !cityPart) {
-                throw new Error('Le sujet et la ville sont requis.');
-            }
-            
-            const topicWords = topicPart
-                .split(/[,\s]+and[,\s]+|[,\s]+|\band\b/)
-                .map(w => w.trim())
-                .filter(w => w.length > 0);
-            
-            const tagFiltersSet = new Set();
-            topicWords.forEach(word => {
-                const mapping = topicMappings[word];
-                if (mapping) {
-                    tagFiltersSet.add(mapping);
-                }
-            });
-            
-            if (tagFiltersSet.size === 0) {
-                throw new Error(`Aucun sujet correspondant trouvé dans "${topicPart}". Sujets supportés: ${Object.keys(topicMappings).join(', ')}`);
-            }
-            
-            return {
-                tagFilters: Array.from(tagFiltersSet),
-                city: cityPart
-            };
+            const topicWords = topicPart.split(/[,\s]+and[,\s]+|[,\s]+|\band\b/).map(w => w.trim()).filter(Boolean);
+            const tagFiltersSet = new Set(topicWords.map(w => topicMappings[w]).filter(Boolean));
+
+            if (tagFiltersSet.size === 0) throw new Error(`Aucun sujet correspondant trouvé dans "${topicPart}".`);
+            return { tagFilters: Array.from(tagFiltersSet), city: cityPart.trim() };
         }
 
         // Calculate zoom for bbox
         function getZoomForBbox(south, west, north, east) {
             const latDiff = north - south;
             const lonDiff = east - west;
-            const avgLat = (south + north) / 2;
-            const adjustedLonDiff = lonDiff / Math.cos((avgLat * Math.PI) / 180);
-            const maxDiff = Math.max(latDiff, adjustedLonDiff);
-            
-            if (maxDiff <= 0.001) return 18;
-            if (maxDiff <= 0.01) return 16;
-            if (maxDiff <= 0.1) return 13;
-            if (maxDiff <= 1) return 10;
-            if (maxDiff <= 5) return 8;
-            if (maxDiff <= 10) return 6;
+            const maxDiff = Math.max(latDiff, lonDiff / Math.cos((south + north) / 2 * Math.PI / 180));
+            if (maxDiff <= 0.001) return 18; if (maxDiff <= 0.01) return 16;
+            if (maxDiff <= 0.1) return 13; if (maxDiff <= 1) return 10;
+            if (maxDiff <= 5) return 8; if (maxDiff <= 10) return 6;
             return 4;
         }
 
@@ -288,118 +274,63 @@
             resultsCounter.classList.add('hidden');
             
             try {
-                const parsed = parseQuery(searchInput.value);
-                const { tagFilters, city } = parsed;
+                const { tagFilters, city } = parseQuery(searchInput.value);
                 
-                // Geocode city
                 const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}&limit=1&addressdetails=1`;
                 const nomRes = await fetch(nomUrl);
-                
-                if (!nomRes.ok) {
-                    throw new Error(`Échec du géocodage: ${nomRes.statusText}`);
-                }
-                
+                if (!nomRes.ok) throw new Error(`Échec du géocodage: ${nomRes.statusText}`);
                 const nomData = await nomRes.json();
-                if (nomData.length === 0) {
-                    throw new Error(`Aucun lieu trouvé pour la ville '${city}'. Essayez un nom plus spécifique.`);
-                }
-                
+                if (nomData.length === 0) throw new Error(`Aucun lieu trouvé pour la ville '${city}'.`);
+
                 const place = nomData[0];
-                const lat = parseFloat(place.lat);
-                const lon = parseFloat(place.lon);
-                const boundingbox = place.boundingbox;
-                const south = parseFloat(boundingbox[0]);
-                const north = parseFloat(boundingbox[1]);
-                const west = parseFloat(boundingbox[2]);
-                const east = parseFloat(boundingbox[3]);
+                const [south, north, west, east] = place.boundingbox.map(parseFloat);
                 const bbox = `${south},${west},${north},${east}`;
                 
-                // Set map view
-                const calculatedZoom = getZoomForBbox(south, west, north, east);
-                map.setView([lat, lon], calculatedZoom);
+                map.setView([parseFloat(place.lat), parseFloat(place.lon)], getZoomForBbox(south, west, north, east));
                 
-                // Query Overpass API
                 const nodeQueries = tagFilters.map(filter => `node${filter}(${bbox})`).join('; ');
                 const query = `[out:json][timeout:30];\n(\n  ${nodeQueries};\n);\nout geom;`;
                 
-                // CORRECTION: Utilisation d'une requête POST, qui est plus robuste.
                 const opUrl = 'https://overpass-api.de/api/interpreter';
-                const opRes = await fetch(opUrl, {
-                    method: 'POST',
-                    body: `data=${encodeURIComponent(query)}`,
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    },
-                });
+                const opRes = await fetch(opUrl, { method: 'POST', body: `data=${encodeURIComponent(query)}` });
 
                 if (!opRes.ok) {
-                    // Tente de récupérer un message d'erreur plus détaillé du corps de la réponse
                     const errorBody = await opRes.text();
-                    console.error("Overpass API Error Body:", errorBody);
-                    throw new Error(`Erreur API Overpass: ${opRes.statusText}. Le serveur a répondu: ${errorBody.substring(0, 200)}`);
+                    throw new Error(`Erreur API Overpass: ${opRes.statusText}. Réponse: ${errorBody.substring(0, 200)}`);
                 }
                 
                 const opData = await opRes.json();
-                const elements = opData.elements || [];
+                features = (opData.elements || [])
+                    .filter(el => el.type === 'node' && el.lat && el.lon)
+                    .map(el => ({ position: [el.lat, el.lon], name: el.tags?.name || 'Élément sans nom', tags: el.tags || {} }));
                 
-                // Process features
-                features = elements
-                    .filter(el => el.type === 'node' && typeof el.lat === 'number' && typeof el.lon === 'number')
-                    .map(el => ({
-                        position: [el.lat, el.lon],
-                        name: el.tags?.name || 'Élément sans nom',
-                        tags: el.tags || {}
-                    }));
-                
-                // Add markers to map
                 features.forEach(feature => {
-                    const marker = L.marker(feature.position).addTo(map);
+                    const icon = getIconForFeature(feature.tags);
+                    const marker = L.marker(feature.position, { icon: icon }).addTo(map);
                     
-                    // Create popup content
-                    let popupContent = `
-                        <div style="font-family: system-ui, -apple-system, sans-serif; line-height: 1.4;">
-                            <h3 style="font-size: 18px; font-weight: bold; margin-bottom: 12px; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">
-                                📍 ${feature.name}
-                            </h3>
-                    `;
-                    
-                    if (Object.entries(feature.tags).length > 0) {
-                        popupContent += '<div style="font-size: 14px;">';
-                        Object.entries(feature.tags).forEach(([key, value]) => {
-                            popupContent += `
-                                <div style="margin-bottom: 8px; padding: 6px; background-color: #f8fafc; border-radius: 6px; border-left: 3px solid #3b82f6;">
-                                    <span style="color: #374151; font-weight: 600; font-size: 13px;">${key}:</span>
-                                    <span style="color: #4b5563;">${value}</span>
-                                </div>
-                            `;
-                        });
+                    let popupContent = `<div style="font-family: system-ui, -apple-system, sans-serif; line-height: 1.4;"><h3 style="font-size: 18px; font-weight: bold; margin-bottom: 12px; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">${feature.name}</h3>`;
+                    if (Object.keys(feature.tags).length > 0) {
+                        popupContent += '<div style="font-size: 14px; max-height: 200px; overflow-y: auto;">';
+                        Object.entries(feature.tags).forEach(([k, v]) => { popupContent += `<div style="margin-bottom: 8px; padding: 6px; background-color: #f8fafc; border-radius: 6px; border-left: 3px solid #3b82f6;"><span style="color: #374151; font-weight: 600;">${k}:</span> <span style="color: #4b5563;">${v}</span></div>`; });
                         popupContent += '</div>';
                     } else {
-                        popupContent += `
-                            <p style="font-size: 14px; color: #6b7280; font-style: italic; text-align: center; padding: 20px; background-color: #fef3c7;">
-                                Aucun détail supplémentaire disponible. C'est un point d'intérêt basique.
-                            </p>
-                        `;
+                        popupContent += `<p style="font-size: 14px; color: #6b7280; font-style: italic;">Aucun détail disponible.</p>`;
                     }
-                    
                     popupContent += '</div>';
-                    
-                    marker.bindPopup(popupContent, {
-                        maxWidth: 350,
-                        minWidth: 250
-                    });
-                    
+                    marker.bindPopup(popupContent, { maxWidth: 350, minWidth: 250 });
                     markers.push(marker);
                 });
                 
-                // Update results counter
                 if (features.length > 0) {
                     resultCount.textContent = features.length;
                     resultsCounter.classList.remove('hidden');
                 }
                 
+                searchPanel.classList.add('hidden');
+                newSearchButton.classList.remove('hidden');
+
             } catch (err) {
-                errorMessage.textContent = err.message || 'Une erreur inattendue s\'est produite.';
+                errorMessage.textContent = err.message;
                 errorDisplay.classList.remove('hidden');
             } finally {
                 loadingOverlay.classList.add('hidden');
@@ -408,26 +339,18 @@
 
         // Event listeners
         searchButton.addEventListener('click', handleSearch);
+        searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSearch(); });
+        fitButton.addEventListener('click', () => { if (markers.length > 0) map.fitBounds(L.featureGroup(markers).getBounds().pad(0.1)); });
         
-        searchInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                handleSearch();
-            }
+        newSearchButton.addEventListener('click', () => {
+            searchPanel.classList.remove('hidden');
+            newSearchButton.classList.add('hidden');
+            clearMarkers();
+            resultsCounter.classList.add('hidden');
+            errorDisplay.classList.add('hidden');
         });
         
-        fitButton.addEventListener('click', () => {
-            if (features.length > 0) {
-                const group = new L.featureGroup(markers);
-                map.fitBounds(group.getBounds().pad(0.1));
-            }
-        });
-        
-        // Initial search on page load
-        window.addEventListener('load', () => {
-            // Optionnel: Effectuer une recherche initiale au chargement.
-            // Décommenter la ligne suivante pour cela.
-            // handleSearch();
-        });
     </script>
 </body>
 </html>
+```
