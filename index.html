@@ -235,9 +235,9 @@
         { type: 'way', filter: '["bicycle_road"="yes"]' },
         { type: 'way', filter: '["highway"="path"]["bicycle"~"^(designated|official)$"]' },
         { type: 'way', filter: '["highway"="footway"]["bicycle"~"^(designated|official)$"]' },
-        // NOUVEAU: routes routières avec cycleway=*
+        // Routes avec cycleway=*
         { type: 'way', filter: '["highway"~"^(trunk|primary|secondary|tertiary|residential|unclassified|service|living_street|primary_link|secondary_link|tertiary_link)$"][~"^cycleway"~"."]' },
-        // Optionnel: routes + bicycle=designated/offical
+        // Routes + bicycle=designated/offical
         { type: 'way', filter: '["highway"~"^(trunk|primary|secondary|tertiary|residential|unclassified|service|living_street|primary_link|secondary_link|tertiary_link)$"]["bicycle"~"^(designated|official)$"]' }
       ],
       footway:    [{ type: 'way',  filter: '["highway"="footway"]' }],
@@ -389,7 +389,13 @@
 
     // Styles lignes/polygones
     function getStyleForFeature(tags) {
-      if (tags.highway === 'cycleway' || Object.keys(tags).some(k => /^cycleway/.test(k))) return { color: '#e11d48', weight: 3, opacity: 0.95 };
+      // Réseau cyclable en VERT
+      if (tags.highway === 'cycleway' || Object.keys(tags).some(k => /^cycleway/.test(k)) || (tags.bicycle_road === 'yes')
+          || (tags.highway === 'path' && /^(designated|official)$/.test(tags.bicycle||''))
+          || (tags.highway === 'footway' && /^(designated|official)$/.test(tags.bicycle||''))
+          || (['trunk','primary','secondary','tertiary','residential','unclassified','service','living_street','primary_link','secondary_link','tertiary_link'].includes(tags.highway||'') && (Object.keys(tags).some(k=>/^cycleway/.test(k)) || /^(designated|official|yes)$/.test(tags.bicycle||'')))) {
+        return { color: '#16a34a', weight: 3, opacity: 0.95 }; // vert
+      }
       if (tags.highway === 'footway')  return { color: '#8b5e3c', weight: 3, opacity: 0.9, dashArray: '6,4' };
       if (tags.highway === 'path')     return { color: '#7c3aed', weight: 3, opacity: 0.9, dashArray: '8,4' };
       if (tags.highway === 'busway' || 'busway' in tags || Object.keys(tags).some(k => k.startsWith('bus:lanes'))) return { color: '#f59e0b', weight: 4, opacity: 0.95 };
@@ -587,7 +593,7 @@ out geom;`;
       }
     }
 
-    // ---- Analyse des GAPS entre réseaux cyclables (avec échantillonnage + appariement minimal + nettoyage de redondances + symbologie) ----
+    // ---- Analyse des GAPS entre réseaux cyclables (échantillonnage + appariement minimal + nettoyage + symbologie dynamique) ----
 
     function toRad(x) { return x * Math.PI / 180; }
     function haversine(a, b) {
@@ -614,7 +620,6 @@ out geom;`;
       analysisStatus.textContent = msg;
     }
 
-    // Echantillonne des points uniformément le long du segment [start,end] (inclus)
     function samplePointsOnSegment(start, end, resolutionMeters) {
       const total = haversine(start, end);
       if (!isFinite(total) || total <= 0) return [start, end];
@@ -631,7 +636,6 @@ out geom;`;
       return points;
     }
 
-    // -------- Helpers pour appariement minimal et grille --------
     function buildGrid(points, dLat, dLon) {
       const grid = new Map();
       function keyFor(lat, lon) {
@@ -665,7 +669,6 @@ out geom;`;
         return reduced;
       }
 
-      // Fallback: pas d'extrémités -> points répartis
       const nodes = Array.from(componentSet);
       const res = [];
       if (nodes.length <= fallbackSample) {
@@ -728,15 +731,15 @@ out geom;`;
       colorStart: '#22c55e',   // vert
       colorMid:   '#facc15',   // jaune
       colorEnd:   '#dc2626',   // rouge
-      // Longueurs (par défaut: on utilisera joinThreshold et gapRadius si null)
+      // Longueurs (par défaut: joinThreshold et gapRadius)
       minGapLengthForColor: null,
       maxGapLengthForColor: null,
       // Importance des composantes
-      significantComponentNodeThresholdRatio: 0.15, // 15% de la taille max
-      significantComponentNodeMinCount: 1000,       // ou au moins 1000 nœuds
+      significantComponentNodeThresholdRatio: 0.10, // 10% de la taille max
+      significantComponentNodeMinCount: 150,        // ou au moins 150 nœuds (échantillonnés)
       // Style
       baseGapWeight: 2.5,
-      importantGapWeight: 5,
+      importantGapWeight: 6,   // poids max si composante très importante
       gapMarkerRadius: 6,
       gapMarkerBorderWeight: 2,
       gapMarkerFillOpacity: 0.95,
@@ -753,7 +756,6 @@ out geom;`;
       return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
     }
     function lerp(a, b, t) { return a + (b - a) * t; }
-    // Couleur en fonction de la distance (piècewise: vert->jaune->rouge)
     function getGapColor(distance, minGap, maxGap) {
       if (!isFinite(distance)) return GAP_STYLE_CONFIG.colorEnd;
       if (maxGap <= minGap) return GAP_STYLE_CONFIG.colorMid;
@@ -767,7 +769,7 @@ out geom;`;
         const g = Math.round(lerp(c1.g, c2.g, tt));
         const b = Math.round(lerp(c1.b, c2.b, tt));
         return rgbToHex(r,g,b);
-        } else {
+      } else {
         const tt = (t - 0.5) / 0.5;
         const r = Math.round(lerp(c2.r, c3.r, tt));
         const g = Math.round(lerp(c2.g, c3.g, tt));
@@ -775,6 +777,8 @@ out geom;`;
         return rgbToHex(r,g,b);
       }
     }
+
+    async function handleSearchAndAnalysisReady() {}
 
     async function runNetworkGapsAnalysis() {
       if (!lastFetchedElements || lastFetchedElements.length === 0) {
@@ -790,7 +794,7 @@ out geom;`;
 
       setAnalysisProgress(3, `Préparation…`);
 
-      // 1) Collecter les voies pertinentes (cycle + option bus lanes)
+      // 1) Collecter les voies pertinentes
       setAnalysisProgress(5, 'Collecte des tronçons cyclables…');
       const polylines = [];
       for (const el of lastFetchedElements) {
@@ -806,7 +810,7 @@ out geom;`;
         return;
       }
 
-      // 2) Construire le graphe en échantillonnant tous les segments
+      // 2) Construire le graphe par échantillonnage
       setAnalysisProgress(12, `Construction du graphe (résolution ${sampleResolution} m)…`);
       const graph = new Map();   // nodeId -> Set(neighborId)
       const nodeCoord = new Map(); // nodeId -> {lat, lon}
@@ -849,7 +853,7 @@ out geom;`;
       const allNodes = Array.from(nodeCoord.entries()).map(([id, { lat, lon }]) => ({ id, lat, lon }));
       setAnalysisProgress(30, `Noeuds générés: ${allNodes.length.toLocaleString('fr-FR')}`);
 
-      // 3) Connexions virtuelles: joindre points à ≤ joinThreshold
+      // 3) Jointure virtuelle à joinThreshold
       setAnalysisProgress(35, 'Jointure des points proches…');
       const centerLat = map.getCenter().lat;
       const degLatJoin = joinThreshold / 111320;
@@ -922,15 +926,15 @@ out geom;`;
       components.forEach((comp, cid) => comp.forEach(n => idToComp.set(n, cid)));
       const nodesWithComp = allNodes.map(n => ({ ...n, compId: idToComp.get(n.id) }));
 
-      // 6) Extraction des extrémités par composante (fallback sur échantillons)
+      // 6) Extrémités par composante
       setAnalysisProgress(68, 'Extraction des extrémités…');
       const compEndpoints = components.map(comp => pickComponentEndpoints(comp, graph, nodeCoord, 40, 16));
 
-      // Pour afficher, map id -> index dans nodesWithComp
+      // Map id -> index global
       const idToIndex = new Map();
       nodesWithComp.forEach((n, i) => idToIndex.set(n.id, i));
 
-      // 7) Appariement glouton minimal unique par paire de composantes
+      // 7) Appariement minimal (glouton unique) inter-réseaux
       setAnalysisProgress(75, 'Recherche des gaps inter-réseaux…');
       const totalPairs = (components.length * (components.length - 1)) / 2;
       let pairCount = 0;
@@ -970,9 +974,9 @@ out geom;`;
         }
       }
 
-      // 7.5) Nettoyage des suggestions (suppression redondances via graphe des composantes + Floyd-Warshall)
+      // 7.5) Nettoyage par Floyd-Warshall (anti-redondances)
       setAnalysisProgress(92, 'Nettoyage des suggestions…');
-      const redundancyTolerance = 8; // mètres
+      const redundancyTolerance = 8; // m
       const C = components.length;
       const directEdge = Array.from({ length: C }, () => Array(C).fill(Infinity));
       for (let u = 0; u < C; u++) directEdge[u][u] = 0;
@@ -1022,7 +1026,7 @@ out geom;`;
       }
       suggestions = Array.from(bestByPair.values());
 
-      // 8) Affichage des gaps avec symbologie dynamique
+      // 8) Affichage des gaps (couleur ~ longueur, épaisseur ~ importance)
       setAnalysisProgress(97, 'Affichage des gaps…');
       suggestionLines.forEach(l => map.removeLayer(l));
       suggestionLines = [];
@@ -1033,12 +1037,12 @@ out geom;`;
       const minColorLen = GAP_STYLE_CONFIG.minGapLengthForColor ?? joinThreshold;
       const maxColorLen = GAP_STYLE_CONFIG.maxGapLengthForColor ?? gapRadius;
 
-      // Calcul de l'importance des composantes
+      // Taille et importance des composantes
       const compSizes = components.map(c => c.size || 0);
       const maxComponentSize = compSizes.length ? Math.max(...compSizes) : 0;
       const significantThreshold = Math.max(
         GAP_STYLE_CONFIG.significantComponentNodeMinCount,
-        Math.floor(GAP_STYLE_CONFIG.significantComponentNodeThresholdRatio * maxComponentSize)
+        Math.floor(GAP_STYLE_CONFIG.significantComponentNodeThresholdRatio * maxComponentSize || 0)
       );
 
       suggestions.sort((a, b) => a.d - b.d);
@@ -1047,10 +1051,17 @@ out geom;`;
         const compA = P.compId, compB = Q.compId;
         const sizeA = compSizes[compA] || 0;
         const sizeB = compSizes[compB] || 0;
+
+        // Importance binaire (pour le libellé)
         const isImportant = (sizeA >= significantThreshold) || (sizeB >= significantThreshold);
 
+        // Pondération continue de l'épaisseur selon l'importance relative
+        const importanceScore = (maxComponentSize > 0) ? Math.max(sizeA, sizeB) / maxComponentSize : 0; // 0..1
+        const weight = GAP_STYLE_CONFIG.baseGapWeight +
+                       (GAP_STYLE_CONFIG.importantGapWeight - GAP_STYLE_CONFIG.baseGapWeight) *
+                       Math.max(0, Math.min(1, importanceScore));
+
         const color = getGapColor(s.d, minColorLen, maxColorLen);
-        const weight = isImportant ? GAP_STYLE_CONFIG.importantGapWeight : GAP_STYLE_CONFIG.baseGapWeight;
 
         const line = L.polyline([[P.lat, P.lon], [Q.lat, Q.lon]], {
           color,
@@ -1062,9 +1073,9 @@ out geom;`;
         const mid = { lat: (P.lat + Q.lat) / 2, lon: (P.lon + Q.lon) / 2 };
         const m = L.circleMarker([mid.lat, mid.lon], {
           radius: GAP_STYLE_CONFIG.gapMarkerRadius,
-          color: color, // bord identique
+          color: color,
           weight: GAP_STYLE_CONFIG.gapMarkerBorderWeight,
-          fillColor: color, // même couleur que la ligne
+          fillColor: color,
           fillOpacity: GAP_STYLE_CONFIG.gapMarkerFillOpacity
         }).addTo(map);
 
@@ -1073,7 +1084,7 @@ out geom;`;
             <b>Gap suggéré</b><br/>
             Distance ≈ ${Math.round(s.d)} m<br/>
             Réseaux: #${compA} (${sizeA} nœuds) ↔ #${compB} (${sizeB} nœuds)<br/>
-            Importance: ${isImportant ? 'élevée' : 'standard'}
+            Importance: ${isImportant ? 'élevée' : 'standard'} (épaisseur proportionnelle)
           </div>
         `;
         m.bindPopup(popupHtml);
@@ -1094,17 +1105,30 @@ out geom;`;
     }
 
     // ---- Écouteurs ----
-    searchButton.addEventListener('click', handleSearch);
-    searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(); });
+    const errorDisplay = document.getElementById('errorDisplay');
+    const errorMessage = document.getElementById('errorMessage');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const resultsCounter = document.getElementById('resultsCounter');
+    const resultCount = document.getElementById('resultCount');
+    const analysisStatus = document.getElementById('analysisStatus');
+    const analysisProgress = document.getElementById('analysisProgress');
 
-    fitButton.addEventListener('click', () => {
+    function setAnalysisProgress(pct, msg) {
+      analysisProgress.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      analysisStatus.textContent = msg;
+    }
+
+    document.getElementById('searchButton').addEventListener('click', handleSearch);
+    document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(); });
+
+    document.getElementById('fitButton').addEventListener('click', () => {
       if (featureLayers.length === 0) return;
       const group = L.featureGroup(featureLayers);
       map.fitBounds(group.getBounds().pad(0.1));
     });
-    newSearchButton.addEventListener('click', () => {
-      searchPanel.classList.remove('hidden');
-      newSearchButton.classList.add('hidden');
+    document.getElementById('newSearchButton').addEventListener('click', () => {
+      document.querySelector('.search-panel').classList.remove('hidden');
+      document.getElementById('newSearchButton').classList.add('hidden');
       clearLayers();
       resultsCounter.classList.add('hidden');
       errorDisplay.classList.add('hidden');
@@ -1124,7 +1148,7 @@ out geom;`;
       gapMarkers.forEach(m => map.removeLayer(m));
       gapMarkers = [];
       gapCount.textContent = '0';
-      zoomGaps.disabled = true;
+      document.getElementById('zoomGaps').disabled = true;
       setAnalysisProgress(0, 'En attente…');
     });
   </script>
