@@ -75,7 +75,7 @@
     <div id="resultsCounter" class="hidden absolute bottom-6 right-6 z-30">
         <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-6 border border-gray-200/50 space-y-3 min-w-[200px]">
             <div class="flex items-center justify-between gap-2 mb-3"><span class="text-2xl font-bold text-green-600">🎯</span><span id="resultCount" class="text-lg font-bold text-gray-800">0</span><span class="text-sm text-gray-600">résultats</span></div>
-            <button id="fitButton" class="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2 text-sm uppercase tracking-wide">📐 Ajuster aux marqueurs</button>
+            <button id="fitButton" class="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2 text-sm uppercase tracking-wide">📐 Ajuster aux éléments</button>
         </div>
     </div>
 
@@ -99,29 +99,19 @@
             restaurant: '["amenity"="restaurant"]', cafe: '["amenity"="cafe"]', bar: '["amenity"="bar"]',
             park: '["leisure"="park"]', hospital: '["amenity"="hospital"]', clinic: '["amenity"="clinic"]',
             shop: '[shop]', store: '[shop]', atm: '["amenity"="atm"]', bank: '["amenity"="bank"]', hotel: '["tourism"="hotel"]',
-            // NOUVEAU: Mots-clés pour les lignes
             cycleway: '["highway"="cycleway"]', bike: '["highway"="cycleway"]',
             footway: '["highway"="footway"]', pathway: '["highway"="pathway"]', sidewalk: '["highway"="footway"]',
             river: '["waterway"="river"]', stream: '["waterway"="stream"]', canal: '["waterway"="canal"]'
         };
-
-        // NOUVEAU: Spécifier le type de géométrie pour chaque mot-clé
         const dataTypeMappings = {
-            bus: 'node', stop: 'node', school: 'node', university: 'node', college: 'node',
-            restaurant: 'node', cafe: 'node', bar: 'node', park: 'node', hospital: 'node',
-            clinic: 'node', shop: 'node', store: 'node', atm: 'node', bank: 'node', hotel: 'node',
-            cycleway: 'way', bike: 'way', footway: 'way', pathway: 'way', sidewalk: 'way',
-            river: 'way', stream: 'way', canal: 'way'
+            bus: 'node', stop: 'node', school: 'node', university: 'node', college: 'node', restaurant: 'node', cafe: 'node', bar: 'node', park: 'node', hospital: 'node', clinic: 'node', shop: 'node', store: 'node', atm: 'node', bank: 'node', hotel: 'node',
+            cycleway: 'way', bike: 'way', footway: 'way', pathway: 'way', sidewalk: 'way', river: 'way', stream: 'way', canal: 'way'
         };
 
         // --- INITIALISATION DE LA CARTE ---
         const map = L.map('map').setView([48.8566, 2.3522], 13);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        }).addTo(map);
-
-        // --- VARIABLES GLOBALES ---
-        let featureLayers = []; // Renommé de "markers" à "featureLayers" pour inclure points et lignes
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(map);
+        let featureLayers = [];
 
         // --- ÉLÉMENTS DU DOM ---
         const searchInput = document.getElementById('searchInput');
@@ -136,8 +126,6 @@
         const newSearchButton = document.getElementById('newSearchButton');
 
         // --- FONCTIONS DE STYLE ---
-
-        // Fonction pour les icônes des points (markers)
         function getIconForFeature(tags) {
             if (tags.highway === 'bus_stop') return L.AwesomeMarkers.icon({ icon: 'bus', prefix: 'fa', markerColor: 'blue' });
             if (tags.amenity === 'school' || tags.amenity === 'college' || tags.amenity === 'university') return L.AwesomeMarkers.icon({ icon: 'school', prefix: 'fa', markerColor: 'green' });
@@ -145,13 +133,11 @@
             if (tags.shop) return L.AwesomeMarkers.icon({ icon: 'store', prefix: 'fa', markerColor: 'purple' });
             return L.AwesomeMarkers.icon({ icon: 'info-circle', prefix: 'fa', markerColor: 'gray' });
         }
-
-        // NOUVEAU: Fonction pour le style des lignes (polylines)
         function getStyleForFeature(tags) {
             if (tags.highway === 'cycleway') return { color: '#e60000', weight: 3, opacity: 0.8 };
             if (tags.highway === 'footway' || tags.highway === 'pathway') return { color: '#964B00', weight: 3, opacity: 0.8, dashArray: '5, 5' };
             if (tags.waterway) return { color: '#0077be', weight: 4, opacity: 0.9 };
-            return { color: '#555', weight: 2 }; // Style par défaut
+            return { color: '#555', weight: 2 };
         }
 
         // --- FONCTIONS UTILITAIRES ---
@@ -159,37 +145,17 @@
             const inMatch = query.toLowerCase().trim().match(/(.+?)\s+in\s+(.+)$/i);
             if (!inMatch) throw new Error('Format: "sujets in ville" (ex: "bus et river in Paris")');
             const [_, topicPart, cityPart] = inMatch;
-
             const topicWords = topicPart.split(/[,\s]+and[,\s]+|[,\s]+|\band\b/).map(w => w.trim()).filter(Boolean);
             const nodeFilters = new Set();
             const wayFilters = new Set();
-
             topicWords.forEach(word => {
-                const tag = topicMappings[word];
-                const type = dataTypeMappings[word];
-                if (tag) {
-                    if (type === 'node') nodeFilters.add(tag);
-                    else if (type === 'way') wayFilters.add(tag);
-                }
+                const tag = topicMappings[word], type = dataTypeMappings[word];
+                if (tag) (type === 'node' ? nodeFilters : wayFilters).add(tag);
             });
-
             if (nodeFilters.size === 0 && wayFilters.size === 0) throw new Error(`Aucun sujet valide trouvé dans "${topicPart}".`);
             return { nodeFilters: Array.from(nodeFilters), wayFilters: Array.from(wayFilters), city: cityPart.trim() };
         }
-        
-        function getZoomForBbox(bounds) {
-            const [south, north, west, east] = bounds;
-            const latDiff = north - south;
-            const lonDiff = east - west;
-            const maxDiff = Math.max(latDiff, lonDiff / Math.cos((south + north) / 2 * Math.PI / 180));
-            if (maxDiff <= 0.01) return 16; if (maxDiff <= 0.1) return 13;
-            if (maxDiff <= 1) return 10; return 8;
-        }
-
-        function clearLayers() {
-            featureLayers.forEach(layer => map.removeLayer(layer));
-            featureLayers = [];
-        }
+        function clearLayers() { featureLayers.forEach(layer => map.removeLayer(layer)); featureLayers = []; }
         
         // --- FONCTION PRINCIPALE DE RECHERCHE ---
         async function handleSearch() {
@@ -201,7 +167,6 @@
             try {
                 const { nodeFilters, wayFilters, city } = parseQuery(searchInput.value);
                 
-                // 1. Géocodage de la ville
                 const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}&limit=1`;
                 const nomRes = await fetch(nomUrl);
                 if (!nomRes.ok) throw new Error(`Échec du géocodage.`);
@@ -209,15 +174,19 @@
                 if (nomData.length === 0) throw new Error(`Ville '${city}' non trouvée.`);
                 
                 const place = nomData[0];
-                const bbox = place.boundingbox.join(','); // sud, nord, ouest, est
+                const bbox = place.boundingbox.join(',');
                 map.fitBounds([[place.boundingbox[0], place.boundingbox[2]], [place.boundingbox[1], place.boundingbox[3]]]);
 
-                // 2. Construction de la requête Overpass
-                const nodeQueries = nodeFilters.map(filter => `node${filter}(${bbox});`).join('\n  ');
-                const wayQueries = wayFilters.map(filter => `way${filter}(${bbox});`).join('\n  ');
-                const query = `[out:json][timeout:60];\n(\n  ${nodeQueries}\n  ${wayQueries}\n);\nout geom;`;
+                // --- CORRECTION DE LA CONSTRUCTION DE LA REQUÊTE ---
+                let queryParts = [];
+                if (nodeFilters.length > 0) {
+                    queryParts.push(nodeFilters.map(filter => `node${filter}(${bbox});`).join('\n  '));
+                }
+                if (wayFilters.length > 0) {
+                    queryParts.push(wayFilters.map(filter => `way${filter}(${bbox});`).join('\n  '));
+                }
+                const query = `[out:json][timeout:60];\n(\n  ${queryParts.join('\n  ')}\n);\nout geom;`;
                 
-                // 3. Appel à l'API Overpass
                 const opUrl = 'https://overpass-api.de/api/interpreter';
                 const opRes = await fetch(opUrl, { method: 'POST', body: `data=${encodeURIComponent(query)}` });
                 if (!opRes.ok) {
@@ -227,28 +196,21 @@
                 
                 const opData = await opRes.json();
                 
-                // 4. Traitement et affichage des résultats
                 (opData.elements || []).forEach(el => {
-                    const tags = el.tags || {};
-                    const name = tags.name || 'Élément sans nom';
+                    const tags = el.tags || {}, name = tags.name || 'Élément sans nom';
                     let layer;
-
-                    // Création du contenu du popup
                     let popupContent = `<div style="font-family: system-ui, sans-serif; line-height: 1.4;"><h3 style="font-size: 16px; font-weight: bold; margin-bottom: 8px;">${name}</h3><div style="font-size: 13px; max-height: 150px; overflow-y: auto;">`;
                     Object.entries(tags).forEach(([k, v]) => { popupContent += `<div><strong>${k}:</strong> ${v}</div>`; });
                     popupContent += `</div></div>`;
 
                     if (el.type === 'node' && el.lat) {
-                        const icon = getIconForFeature(tags);
-                        layer = L.marker([el.lat, el.lon], { icon }).addTo(map);
+                        layer = L.marker([el.lat, el.lon], { icon: getIconForFeature(tags) });
                     } else if (el.type === 'way' && el.geometry && el.geometry.length > 1) {
                         const latLngs = el.geometry.map(pt => [pt.lat, pt.lon]);
-                        const style = getStyleForFeature(tags);
-                        layer = L.polyline(latLngs, style).addTo(map);
+                        layer = L.polyline(latLngs, getStyleForFeature(tags));
                     }
-
                     if (layer) {
-                        layer.bindPopup(popupContent, { maxWidth: 300 });
+                        layer.bindPopup(popupContent, { maxWidth: 300 }).addTo(map);
                         featureLayers.push(layer);
                     }
                 });
