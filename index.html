@@ -1,247 +1,365 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OSM Data Explorer</title>
-    
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
-    <!-- Font Awesome et Awesome Markers CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css" />
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <style>
-        #map { height: 100vh; width: 100%; z-index: 0; }
-        .search-panel { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; max-width: 64rem; width: 90%; max-height: 90vh; overflow-y: auto; }
-        .loading-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.2); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #6366f1; border-radius: 50%; width: 48px; height: 48px; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .hidden { display: none; }
-        .leaflet-popup-content-wrapper { border-radius: 12px; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>OSM Data Explorer</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- Font Awesome + Awesome Markers -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css" />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    #map { height: 100vh; width: 100%; z-index: 0; }
+    .search-panel {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      z-index: 1000; max-width: 64rem; width: 90%; max-height: 90vh; overflow-y: auto;
+    }
+    .loading-overlay {
+      position: absolute; inset: 0; background: rgba(0,0,0,.2); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center; z-index: 2000;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3; border-top: 4px solid #6366f1; border-radius: 50%;
+      width: 48px; height: 48px; animation: spin 1s linear infinite;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
+    .hidden { display: none }
+    .leaflet-popup-content-wrapper { border-radius: 12px }
+  </style>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50">
-    <!-- Header -->
-    <header class="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-2xl p-6 md:p-8 relative z-10">
-        <div class="max-w-7xl mx-auto text-center md:text-left">
-            <h1 class="text-3xl md:text-5xl font-black mb-2 drop-shadow-lg">🌍 OSM Data Explorer</h1>
-            <p class="text-lg md:text-xl opacity-95 max-w-3xl mx-auto md:mx-0 leading-relaxed">Décrivez ce que vous voulez voir (points ou lignes) et regardez-le apparaître sur une belle carte.</p>
-        </div>
-    </header>
-
-    <!-- Bouton Nouvelle Recherche -->
-    <button id="newSearchButton" class="hidden absolute top-28 left-4 z-[1000] bg-white/90 backdrop-blur-md shadow-lg rounded-lg p-3 text-gray-700 font-semibold hover:bg-gray-50 transition-transform hover:scale-105">
-        <i class="fa-solid fa-magnifying-glass mr-2"></i> Nouvelle Recherche
-    </button>
-
-    <!-- Map Container -->
-    <div id="map"></div>
-
-    <!-- Search Panel -->
-    <div class="search-panel">
-        <div class="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-6 md:p-8">
-            <div class="space-y-6">
-                <!-- Input Section -->
-                <div>
-                    <label class="block text-gray-800 text-xl font-bold mb-4 text-center">🔍 Que voulez-vous explorer?</label>
-                    <input type="text" id="searchInput" value="cycleway and river in Toulouse" class="w-full px-6 py-4 text-lg bg-gradient-to-r from-gray-50 to-blue-50 border-2 border-gray-300 rounded-2xl focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:border-transparent shadow-xl transition-all duration-300 placeholder-gray-500 font-medium" placeholder="Ex: school in Paris, cycleway in Lyon..." />
-                </div>
-
-                <!-- Bouton Recherche -->
-                <button id="searchButton" class="w-full py-4 px-8 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white font-extrabold text-lg rounded-2xl shadow-2xl hover:shadow-3xl transform hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 uppercase tracking-wide">🚀 Lancer la recherche</button>
-
-                <!-- Zone d'erreur -->
-                <div id="errorDisplay" class="hidden p-6 bg-red-50 border-2 border-red-200 rounded-2xl shadow-md">
-                    <div class="flex items-center gap-3 mb-2"><span class="text-2xl">⚠️</span><h3 class="font-bold text-red-800 text-lg">Problème de requête</h3></div>
-                    <p id="errorMessage" class="text-red-700 whitespace-pre-wrap"></p>
-                </div>
-
-                <!-- Sujets supportés -->
-                <div class="p-4 bg-blue-50/50 border border-blue-200 rounded-2xl text-sm md:text-base space-y-2">
-                    <p class="font-semibold text-blue-800 flex items-center gap-2">📋 Sujets supportés (combinez-les!)</p>
-                    <p class="text-blue-700"><b>Points:</b> bus, school, restaurant, cafe, bar, park, hospital, shop, atm, bank, hotel</p>
-                    <p class="text-blue-700"><b>Lignes:</b> cycleway, footway, river, stream, canal</p>
-                </div>
-            </div>
-        </div>
+  <!-- Header -->
+  <header class="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-2xl p-6 md:p-8 relative z-10">
+    <div class="max-w-7xl mx-auto text-center md:text-left">
+      <h1 class="text-3xl md:text-5xl font-black mb-2 drop-shadow-lg">🌍 OSM Data Explorer</h1>
+      <p class="text-lg md:text-xl opacity-95 max-w-3xl mx-auto md:mx-0 leading-relaxed">
+        Décrivez ce que vous voulez voir (points et lignes) et regardez-le apparaître sur la carte.
+      </p>
+      <p class="text-sm md:text-base mt-4 opacity-80 italic">
+        Données en temps réel via l'API Overpass. Le zoom s'ajuste automatiquement !
+      </p>
     </div>
+  </header>
 
-    <!-- Compteur de résultats -->
-    <div id="resultsCounter" class="hidden absolute bottom-6 right-6 z-30">
-        <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-6 border border-gray-200/50 space-y-3 min-w-[200px]">
-            <div class="flex items-center justify-between gap-2 mb-3"><span class="text-2xl font-bold text-green-600">🎯</span><span id="resultCount" class="text-lg font-bold text-gray-800">0</span><span class="text-sm text-gray-600">résultats</span></div>
-            <button id="fitButton" class="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2 text-sm uppercase tracking-wide">📐 Ajuster aux éléments</button>
+  <!-- Bouton Nouvelle Recherche -->
+  <button id="newSearchButton"
+          class="hidden absolute top-28 left-4 z-[1000] bg-white/90 backdrop-blur-md shadow-lg rounded-lg p-3 text-gray-700 font-semibold hover:bg-gray-50 transition-transform hover:scale-105">
+    <i class="fa-solid fa-magnifying-glass mr-2"></i> Nouvelle Recherche
+  </button>
+
+  <!-- Map -->
+  <div id="map"></div>
+
+  <!-- Search Panel -->
+  <div class="search-panel">
+    <div class="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-6 md:p-8">
+      <div class="space-y-6">
+        <div>
+          <label class="block text-gray-800 text-xl font-bold mb-4 text-center md:text-left">
+            🔍 Que voulez-vous explorer?
+          </label>
+          <input id="searchInput" type="text"
+                 value="cycleway and footway and river in Bordeaux"
+                 class="w-full px-6 py-4 text-lg bg-gradient-to-r from-gray-50 to-blue-50 border-2 border-gray-300 rounded-2xl focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:border-transparent shadow-xl transition-all duration-300 placeholder-gray-500 font-medium"
+                 placeholder="Ex: bus stops in Lyon, cycleway and river in Toulouse" />
         </div>
-    </div>
 
-    <!-- Overlay de chargement -->
-    <div id="loadingOverlay" class="loading-overlay hidden">
-        <div class="bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-3xl text-center space-y-4 border-2 border-indigo-200">
-            <div class="spinner"></div>
-            <p class="text-xl font-semibold text-gray-700">Récupération des données...</p>
+        <button id="searchButton"
+                class="w-full py-4 px-8 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white font-extrabold text-lg rounded-2xl shadow-2xl hover:shadow-3xl transform hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 uppercase tracking-wide">
+          🚀 Lancer la recherche
+        </button>
+
+        <div id="errorDisplay" class="hidden p-6 bg-gradient-to-r from-red-50 to-pink-50 border-2 border-red-200 rounded-2xl shadow-md">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-2xl">⚠️</span>
+            <h3 class="font-bold text-red-800 text-lg">Problème de requête</h3>
+          </div>
+          <p id="errorMessage" class="text-red-700 leading-relaxed whitespace-pre-wrap"></p>
         </div>
+
+        <div class="p-4 bg-blue-50/50 border border-blue-200 rounded-2xl text-sm md:text-base space-y-2">
+          <p class="font-semibold text-blue-800 flex items-center gap-2">📋 Sujets supportés (combinez-les!)</p>
+          <p class="text-blue-700">
+            Points: bus, stop, school, university, college, restaurant, cafe, bar, park, hospital, clinic, shop, store, atm, bank, hotel
+          </p>
+          <p class="text-blue-700">
+            Lignes: cycleway, footway, sidewalk, path, river, stream, canal, drain, ditch
+          </p>
+          <p class="text-gray-600 text-xs italic">Astuce: “and” ou “et” fonctionnent (ex: cycleway et river in Paris).</p>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <!-- Scripts JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.min.js"></script>
-    
-    <script>
-        // --- CONFIGURATION ---
-        const topicMappings = {
-            bus: '["highway"="bus_stop"]', stop: '["highway"="bus_stop"]',
-            school: '["amenity"="school"]', university: '["amenity"="university"]', college: '["amenity"="college"]',
-            restaurant: '["amenity"="restaurant"]', cafe: '["amenity"="cafe"]', bar: '["amenity"="bar"]',
-            park: '["leisure"="park"]', hospital: '["amenity"="hospital"]', clinic: '["amenity"="clinic"]',
-            shop: '[shop]', store: '[shop]', atm: '["amenity"="atm"]', bank: '["amenity"="bank"]', hotel: '["tourism"="hotel"]',
-            cycleway: '["highway"="cycleway"]', bike: '["highway"="cycleway"]',
-            footway: '["highway"="footway"]', pathway: '["highway"="pathway"]', sidewalk: '["highway"="footway"]',
-            river: '["waterway"="river"]', stream: '["waterway"="stream"]', canal: '["waterway"="canal"]'
-        };
-        const dataTypeMappings = {
-            bus: 'node', stop: 'node', school: 'node', university: 'node', college: 'node', restaurant: 'node', cafe: 'node', bar: 'node', park: 'node', hospital: 'node', clinic: 'node', shop: 'node', store: 'node', atm: 'node', bank: 'node', hotel: 'node',
-            cycleway: 'way', bike: 'way', footway: 'way', pathway: 'way', sidewalk: 'way', river: 'way', stream: 'way', canal: 'way'
-        };
+  <!-- Results Counter -->
+  <div id="resultsCounter" class="hidden absolute bottom-6 right-6 z-30">
+    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-6 border border-gray-200/50 space-y-3 min-w-[200px]">
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <span class="text-2xl font-bold text-green-600">🎯</span>
+        <span id="resultCount" class="text-lg font-bold text-gray-800">0</span>
+        <span class="text-sm text-gray-600">éléments</span>
+      </div>
+      <button id="fitButton"
+              class="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2 text-sm uppercase tracking-wide">
+        📐 Ajuster aux éléments
+      </button>
+    </div>
+  </div>
 
-        // --- INITIALISATION DE LA CARTE ---
-        const map = L.map('map').setView([48.8566, 2.3522], 13);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(map);
-        let featureLayers = [];
+  <!-- Loading -->
+  <div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-3xl text-center space-y-4 border-2 border-indigo-200">
+      <div class="spinner"></div>
+      <p class="text-xl font-semibold text-gray-700">Récupération des données OpenStreetMap...</p>
+      <p class="text-sm text-gray-500">Cela peut prendre quelques secondes pour les grandes zones.</p>
+    </div>
+  </div>
 
-        // --- ÉLÉMENTS DU DOM ---
-        const searchInput = document.getElementById('searchInput');
-        const searchButton = document.getElementById('searchButton');
-        const errorDisplay = document.getElementById('errorDisplay');
-        const errorMessage = document.getElementById('errorMessage');
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        const resultsCounter = document.getElementById('resultsCounter');
-        const resultCount = document.getElementById('resultCount');
-        const fitButton = document.getElementById('fitButton');
-        const searchPanel = document.querySelector('.search-panel');
-        const newSearchButton = document.getElementById('newSearchButton');
+  <!-- Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.min.js"></script>
 
-        // --- FONCTIONS DE STYLE ---
-        function getIconForFeature(tags) {
-            if (tags.highway === 'bus_stop') return L.AwesomeMarkers.icon({ icon: 'bus', prefix: 'fa', markerColor: 'blue' });
-            if (tags.amenity === 'school' || tags.amenity === 'college' || tags.amenity === 'university') return L.AwesomeMarkers.icon({ icon: 'school', prefix: 'fa', markerColor: 'green' });
-            if (tags.amenity === 'restaurant') return L.AwesomeMarkers.icon({ icon: 'utensils', prefix: 'fa', markerColor: 'orange' });
-            if (tags.shop) return L.AwesomeMarkers.icon({ icon: 'store', prefix: 'fa', markerColor: 'purple' });
-            return L.AwesomeMarkers.icon({ icon: 'info-circle', prefix: 'fa', markerColor: 'gray' });
+  <script>
+    // Mots-clés → type + filtre Overpass
+    const topics = {
+      // Points (nodes)
+      bus:      [{ type: 'node', filter: '["highway"="bus_stop"]' }],
+      stop:     [{ type: 'node', filter: '["highway"="bus_stop"]' }],
+      school:   [{ type: 'node', filter: '["amenity"="school"]' }],
+      university:[{ type: 'node', filter: '["amenity"="university"]' }],
+      college:  [{ type: 'node', filter: '["amenity"="college"]' }],
+      restaurant:[{ type: 'node', filter: '["amenity"="restaurant"]' }],
+      cafe:     [{ type: 'node', filter: '["amenity"="cafe"]' }],
+      bar:      [{ type: 'node', filter: '["amenity"="bar"]' }],
+      hospital: [{ type: 'node', filter: '["amenity"="hospital"]' }],
+      clinic:   [{ type: 'node', filter: '["amenity"="clinic"]' }],
+      shop:     [{ type: 'node', filter: '[shop]' }],
+      store:    [{ type: 'node', filter: '[shop]' }],
+      atm:      [{ type: 'node', filter: '["amenity"="atm"]' }],
+      bank:     [{ type: 'node', filter: '["amenity"="bank"]' }],
+      hotel:    [{ type: 'node', filter: '["tourism"="hotel"]' }],
+      // Parcs (souvent des ways, mais gardons les nodes si présents)
+      park:     [{ type: 'way',  filter: '["leisure"="park"]' }, { type: 'node', filter: '["leisure"="park"]' }],
+
+      // Lignes (ways)
+      cycleway: [{ type: 'way',  filter: '["highway"="cycleway"]' }],
+      bike:     [{ type: 'way',  filter: '["highway"="cycleway"]' }],
+      footway:  [{ type: 'way',  filter: '["highway"="footway"]' }],
+      sidewalk: [{ type: 'way',  filter: '["highway"="footway"]["footway"="sidewalk"]' }],
+      path:     [{ type: 'way',  filter: '["highway"="path"]' }],
+      pathway:  [{ type: 'way',  filter: '["highway"="path"]' }], // correction de "pathway" -> "path"
+
+      // Cours d'eau (ways)
+      river:    [{ type: 'way',  filter: '["waterway"="river"]' }],
+      stream:   [{ type: 'way',  filter: '["waterway"="stream"]' }],
+      canal:    [{ type: 'way',  filter: '["waterway"="canal"]' }],
+      drain:    [{ type: 'way',  filter: '["waterway"="drain"]' }],
+      ditch:    [{ type: 'way',  filter: '["waterway"="ditch"]' }],
+      watercourse: [{ type: 'way', filter: '["waterway"~"^(river|stream|canal|drain|ditch)$"]' }],
+    };
+
+    // Carte
+    const map = L.map('map').setView([48.8566, 2.3522], 13);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO'
+    }).addTo(map);
+
+    // État
+    let featureLayers = [];
+
+    // DOM
+    const searchInput = document.getElementById('searchInput');
+    const searchButton = document.getElementById('searchButton');
+    const errorDisplay = document.getElementById('errorDisplay');
+    const errorMessage = document.getElementById('errorMessage');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const resultsCounter = document.getElementById('resultsCounter');
+    const resultCount = document.getElementById('resultCount');
+    const fitButton = document.getElementById('fitButton');
+    const searchPanel = document.querySelector('.search-panel');
+    const newSearchButton = document.getElementById('newSearchButton');
+
+    // Icônes pour les points
+    function getIconForFeature(tags) {
+      if (tags.highway === 'bus_stop') return L.AwesomeMarkers.icon({ icon: 'bus', prefix: 'fa', markerColor: 'blue' });
+      if (['school','college','university'].includes(tags.amenity)) return L.AwesomeMarkers.icon({ icon: 'school', prefix: 'fa', markerColor: 'green' });
+      if (tags.amenity === 'restaurant') return L.AwesomeMarkers.icon({ icon: 'utensils', prefix: 'fa', markerColor: 'orange' });
+      if (tags.amenity === 'cafe') return L.AwesomeMarkers.icon({ icon: 'coffee', prefix: 'fa', markerColor: 'cadetblue' });
+      if (tags.amenity === 'bar') return L.AwesomeMarkers.icon({ icon: 'martini-glass', prefix: 'fa', markerColor: 'darkred' });
+      if (tags.amenity === 'hospital' || tags.amenity === 'clinic') return L.AwesomeMarkers.icon({ icon: 'kit-medical', prefix: 'fa', markerColor: 'red' });
+      if (tags.shop) return L.AwesomeMarkers.icon({ icon: 'store', prefix: 'fa', markerColor: 'purple' });
+      if (tags.amenity === 'bank') return L.AwesomeMarkers.icon({ icon: 'building-columns', prefix: 'fa', markerColor: 'blue' });
+      if (tags.amenity === 'atm') return L.AwesomeMarkers.icon({ icon: 'money-bill-wave', prefix: 'fa', markerColor: 'darkgreen' });
+      if (tags.tourism === 'hotel') return L.AwesomeMarkers.icon({ icon: 'bed', prefix: 'fa', markerColor: 'cadetblue' });
+      if (tags.leisure === 'park') return L.AwesomeMarkers.icon({ icon: 'tree', prefix: 'fa', markerColor: 'darkgreen' });
+      return L.AwesomeMarkers.icon({ icon: 'info-circle', prefix: 'fa', markerColor: 'gray' });
+    }
+
+    // Style des lignes
+    function getStyleForFeature(tags) {
+      // Pistes / Chemins
+      if (tags.highway === 'cycleway') return { color: '#e11d48', weight: 3, opacity: 0.9 };        // rose/rouge
+      if (tags.highway === 'footway')  return { color: '#8b5e3c', weight: 3, opacity: 0.9, dashArray: '6,4' }; // brun pointillé
+      if (tags.highway === 'path')     return { color: '#7c3aed', weight: 3, opacity: 0.9, dashArray: '8,4' }; // violet
+
+      // Cours d'eau
+      if (tags.waterway === 'river')   return { color: '#1d4ed8', weight: 4, opacity: 0.9 }; // bleu foncé
+      if (tags.waterway === 'canal')   return { color: '#0ea5e9', weight: 4, opacity: 0.9 }; // bleu clair
+      if (tags.waterway === 'stream')  return { color: '#60a5fa', weight: 3, opacity: 0.9 };
+      if (tags.waterway === 'drain')   return { color: '#38bdf8', weight: 2, opacity: 0.9, dashArray: '4,3' };
+      if (tags.waterway === 'ditch')   return { color: '#93c5fd', weight: 2, opacity: 0.9, dashArray: '4,3' };
+
+      // Parcs (polygones tracés en contours)
+      if (tags.leisure === 'park')     return { color: '#16a34a', weight: 2, opacity: 0.8 };
+
+      return { color: '#555', weight: 2, opacity: 0.8 };
+    }
+
+    // Parsing de la requête "topics in city"
+    function parseQuery(q) {
+      const lower = q.toLowerCase().trim();
+      const inMatch = lower.match(/(.+?)\s+in\s+(.+)$/i);
+      if (!inMatch) throw new Error('Format attendu: "sujets in ville" (ex: cycleway and river in Toulouse)');
+      const topicPart = inMatch[1].trim();
+      const cityPart  = inMatch[2].trim();
+
+      const words = topicPart
+        .replace(/\s+(?:and|et)\s+/gi, ',')
+        .split(/[,\+;]|(\s+)/g)
+        .map(w => (w || '').trim())
+        .filter(w => !!w && w !== '+');
+
+      const nodeFilters = [];
+      const wayFilters  = [];
+
+      words.forEach(w => {
+        const defs = topics[w];
+        if (defs) {
+          defs.forEach(d => (d.type === 'node' ? nodeFilters : wayFilters).push(d.filter));
         }
-        function getStyleForFeature(tags) {
-            if (tags.highway === 'cycleway') return { color: '#e60000', weight: 3, opacity: 0.8 };
-            if (tags.highway === 'footway' || tags.highway === 'pathway') return { color: '#964B00', weight: 3, opacity: 0.8, dashArray: '5, 5' };
-            if (tags.waterway) return { color: '#0077be', weight: 4, opacity: 0.9 };
-            return { color: '#555', weight: 2 };
+      });
+
+      if (nodeFilters.length === 0 && wayFilters.length === 0) {
+        throw new Error(`Aucun sujet reconnu dans "${topicPart}".`);
+      }
+
+      return { nodeFilters, wayFilters, city: cityPart };
+    }
+
+    function clearLayers() {
+      featureLayers.forEach(l => map.removeLayer(l));
+      featureLayers = [];
+    }
+
+    // Recherche
+    async function handleSearch() {
+      errorDisplay.classList.add('hidden');
+      clearLayers();
+      loadingOverlay.classList.remove('hidden');
+      resultsCounter.classList.add('hidden');
+
+      try {
+        const { nodeFilters, wayFilters, city } = parseQuery(searchInput.value);
+
+        // Géocodage
+        const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}&limit=1&addressdetails=1`;
+        const nomRes = await fetch(nomUrl);
+        if (!nomRes.ok) throw new Error('Échec du géocodage');
+        const nomData = await nomRes.json();
+        if (nomData.length === 0) throw new Error(`Aucun lieu trouvé pour '${city}'.`);
+
+        const place = nomData[0];
+        const [south, north, west, east] = place.boundingbox.map(parseFloat);
+        const bbox = `${south},${west},${north},${east}`;
+        map.setView([parseFloat(place.lat), parseFloat(place.lon)], 12);
+
+        // Construction de la requête Overpass (évite les sections vides)
+        const parts = [];
+        if (nodeFilters.length > 0) parts.push(nodeFilters.map(f => `node${f}(${bbox});`).join('\n  '));
+        if (wayFilters.length > 0)  parts.push(wayFilters.map(f => `way${f}(${bbox});`).join('\n  '));
+
+        const overpassQuery = `[out:json][timeout:60];
+(
+  ${parts.join('\n  ')}
+);
+out geom;`;
+
+        const opUrl = 'https://overpass-api.de/api/interpreter';
+        const opRes = await fetch(opUrl, { method: 'POST', body: `data=${encodeURIComponent(overpassQuery)}` });
+        if (!opRes.ok) {
+          const body = await opRes.text();
+          throw new Error(`Erreur API Overpass: ${opRes.statusText}. ${body.substring(0, 180)}`);
         }
 
-        // --- FONCTIONS UTILITAIRES ---
-        function parseQuery(query) {
-            const inMatch = query.toLowerCase().trim().match(/(.+?)\s+in\s+(.+)$/i);
-            if (!inMatch) throw new Error('Format: "sujets in ville" (ex: "bus et river in Paris")');
-            const [_, topicPart, cityPart] = inMatch;
-            const topicWords = topicPart.split(/[,\s]+and[,\s]+|[,\s]+|\band\b/).map(w => w.trim()).filter(Boolean);
-            const nodeFilters = new Set();
-            const wayFilters = new Set();
-            topicWords.forEach(word => {
-                const tag = topicMappings[word], type = dataTypeMappings[word];
-                if (tag) (type === 'node' ? nodeFilters : wayFilters).add(tag);
-            });
-            if (nodeFilters.size === 0 && wayFilters.size === 0) throw new Error(`Aucun sujet valide trouvé dans "${topicPart}".`);
-            return { nodeFilters: Array.from(nodeFilters), wayFilters: Array.from(wayFilters), city: cityPart.trim() };
-        }
-        function clearLayers() { featureLayers.forEach(layer => map.removeLayer(layer)); featureLayers = []; }
-        
-        // --- FONCTION PRINCIPALE DE RECHERCHE ---
-        async function handleSearch() {
-            errorDisplay.classList.add('hidden');
-            clearLayers();
-            loadingOverlay.classList.remove('hidden');
-            resultsCounter.classList.add('hidden');
-            
-            try {
-                const { nodeFilters, wayFilters, city } = parseQuery(searchInput.value);
-                
-                const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}&limit=1`;
-                const nomRes = await fetch(nomUrl);
-                if (!nomRes.ok) throw new Error(`Échec du géocodage.`);
-                const nomData = await nomRes.json();
-                if (nomData.length === 0) throw new Error(`Ville '${city}' non trouvée.`);
-                
-                const place = nomData[0];
-                const bbox = place.boundingbox.join(',');
-                map.fitBounds([[place.boundingbox[0], place.boundingbox[2]], [place.boundingbox[1], place.boundingbox[3]]]);
+        const data = await opRes.json();
+        const elements = data.elements || [];
 
-                // --- CORRECTION DE LA CONSTRUCTION DE LA REQUÊTE ---
-                let queryParts = [];
-                if (nodeFilters.length > 0) {
-                    queryParts.push(nodeFilters.map(filter => `node${filter}(${bbox});`).join('\n  '));
-                }
-                if (wayFilters.length > 0) {
-                    queryParts.push(wayFilters.map(filter => `way${filter}(${bbox});`).join('\n  '));
-                }
-                const query = `[out:json][timeout:60];\n(\n  ${queryParts.join('\n  ')}\n);\nout geom;`;
-                
-                const opUrl = 'https://overpass-api.de/api/interpreter';
-                const opRes = await fetch(opUrl, { method: 'POST', body: `data=${encodeURIComponent(query)}` });
-                if (!opRes.ok) {
-                    const errorBody = await opRes.text();
-                    throw new Error(`Erreur API Overpass: ${opRes.statusText}. ${errorBody.substring(0, 200)}`);
-                }
-                
-                const opData = await opRes.json();
-                
-                (opData.elements || []).forEach(el => {
-                    const tags = el.tags || {}, name = tags.name || 'Élément sans nom';
-                    let layer;
-                    let popupContent = `<div style="font-family: system-ui, sans-serif; line-height: 1.4;"><h3 style="font-size: 16px; font-weight: bold; margin-bottom: 8px;">${name}</h3><div style="font-size: 13px; max-height: 150px; overflow-y: auto;">`;
-                    Object.entries(tags).forEach(([k, v]) => { popupContent += `<div><strong>${k}:</strong> ${v}</div>`; });
-                    popupContent += `</div></div>`;
+        elements.forEach(el => {
+          const tags = el.tags || {};
+          const name = tags.name || 'Élément sans nom';
+          let layer;
 
-                    if (el.type === 'node' && el.lat) {
-                        layer = L.marker([el.lat, el.lon], { icon: getIconForFeature(tags) });
-                    } else if (el.type === 'way' && el.geometry && el.geometry.length > 1) {
-                        const latLngs = el.geometry.map(pt => [pt.lat, pt.lon]);
-                        layer = L.polyline(latLngs, getStyleForFeature(tags));
-                    }
-                    if (layer) {
-                        layer.bindPopup(popupContent, { maxWidth: 300 }).addTo(map);
-                        featureLayers.push(layer);
-                    }
-                });
-                
-                if (featureLayers.length > 0) {
-                    resultCount.textContent = featureLayers.length;
-                    resultsCounter.classList.remove('hidden');
-                }
-                
-                searchPanel.classList.add('hidden');
-                newSearchButton.classList.remove('hidden');
+          // Popup
+          let popup = `<div style="font-family: system-ui, sans-serif; line-height:1.4;">
+            <h3 style="font-size:16px;font-weight:700;margin-bottom:8px;">${name}</h3>
+            <div style="font-size:13px;max-height:150px;overflow-y:auto;">`;
+          Object.entries(tags).forEach(([k, v]) => { popup += `<div><strong>${k}:</strong> ${v}</div>`; });
+          popup += `</div></div>`;
 
-            } catch (err) {
-                errorMessage.textContent = err.message;
-                errorDisplay.classList.remove('hidden');
-            } finally {
-                loadingOverlay.classList.add('hidden');
-            }
-        }
+          if (el.type === 'node' && el.lat && el.lon) {
+            layer = L.marker([el.lat, el.lon], { icon: getIconForFeature(tags) }).addTo(map);
+          } else if (el.type === 'way' && el.geometry && el.geometry.length > 1) {
+            const latLngs = el.geometry.map(pt => [pt.lat, pt.lon]);
+            layer = L.polyline(latLngs, getStyleForFeature(tags)).addTo(map);
+          }
 
-        // --- ÉCOUTEURS D'ÉVÉNEMENTS ---
-        searchButton.addEventListener('click', handleSearch);
-        searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSearch(); });
-        fitButton.addEventListener('click', () => { if (featureLayers.length > 0) map.fitBounds(L.featureGroup(featureLayers).getBounds().pad(0.1)); });
-        newSearchButton.addEventListener('click', () => {
-            searchPanel.classList.remove('hidden');
-            newSearchButton.classList.add('hidden');
-            clearLayers();
-            resultsCounter.classList.add('hidden');
-            errorDisplay.classList.add('hidden');
+          if (layer) {
+            layer.bindPopup(popup, { maxWidth: 320 });
+            featureLayers.push(layer);
+          }
         });
-    </script>
+
+        if (featureLayers.length > 0) {
+          resultCount.textContent = featureLayers.length;
+          resultsCounter.classList.remove('hidden');
+        }
+
+        // UI
+        searchPanel.classList.add('hidden');
+        newSearchButton.classList.remove('hidden');
+
+      } catch (err) {
+        errorMessage.textContent = err.message || 'Erreur inconnue.';
+        errorDisplay.classList.remove('hidden');
+      } finally {
+        loadingOverlay.classList.add('hidden');
+      }
+    }
+
+    // Écouteurs
+    searchButton.addEventListener('click', handleSearch);
+    searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(); });
+
+    fitButton.addEventListener('click', () => {
+      if (featureLayers.length === 0) return;
+      const group = L.featureGroup(featureLayers);
+      map.fitBounds(group.getBounds().pad(0.1));
+    });
+
+    newSearchButton.addEventListener('click', () => {
+      searchPanel.classList.remove('hidden');
+      newSearchButton.classList.add('hidden');
+      clearLayers();
+      resultsCounter.classList.add('hidden');
+      errorDisplay.classList.add('hidden');
+    });
+  </script>
 </body>
 </html>
