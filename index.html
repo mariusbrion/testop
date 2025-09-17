@@ -177,8 +177,10 @@
             park: '["leisure"="park"]',
             hospital: '["amenity"="hospital"]',
             clinic: '["amenity"="clinic"]',
-            shop: '["shop"]',
-            store: '["shop"]',
+            // CORRECTION: Syntaxe correcte pour rechercher n'importe quelle boutique.
+            // On retire les guillemets autour de "shop".
+            shop: '[shop]',
+            store: '[shop]',
             atm: '["amenity"="atm"]',
             bank: '["amenity"="bank"]',
             hotel: '["tourism"="hotel"]',
@@ -294,7 +296,7 @@
                 const nomRes = await fetch(nomUrl);
                 
                 if (!nomRes.ok) {
-                    throw new Error(`Échec du géocodage: ${nomRes.status}`);
+                    throw new Error(`Échec du géocodage: ${nomRes.statusText}`);
                 }
                 
                 const nomData = await nomRes.json();
@@ -318,12 +320,23 @@
                 
                 // Query Overpass API
                 const nodeQueries = tagFilters.map(filter => `node${filter}(${bbox})`).join('; ');
-                const query = `[out:json][timeout:30];\n(\n  ${nodeQueries}\n);\nout geom;\n`;
-                const opUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+                const query = `[out:json][timeout:30];\n(\n  ${nodeQueries};\n);\nout geom;`;
                 
-                const opRes = await fetch(opUrl);
+                // CORRECTION: Utilisation d'une requête POST, qui est plus robuste.
+                const opUrl = 'https://overpass-api.de/api/interpreter';
+                const opRes = await fetch(opUrl, {
+                    method: 'POST',
+                    body: `data=${encodeURIComponent(query)}`,
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    },
+                });
+
                 if (!opRes.ok) {
-                    throw new Error(`Erreur API Overpass: ${opRes.statusText}`);
+                    // Tente de récupérer un message d'erreur plus détaillé du corps de la réponse
+                    const errorBody = await opRes.text();
+                    console.error("Overpass API Error Body:", errorBody);
+                    throw new Error(`Erreur API Overpass: ${opRes.statusText}. Le serveur a répondu: ${errorBody.substring(0, 200)}`);
                 }
                 
                 const opData = await opRes.json();
@@ -411,7 +424,8 @@
         
         // Initial search on page load
         window.addEventListener('load', () => {
-            // Optional: perform initial search
+            // Optionnel: Effectuer une recherche initiale au chargement.
+            // Décommenter la ligne suivante pour cela.
             // handleSearch();
         });
     </script>
