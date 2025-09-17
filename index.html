@@ -33,7 +33,6 @@
     .hidden { display: none }
     .leaflet-popup-content-wrapper { border-radius: 12px }
 
-    /* Barre de progression (analyse) */
     .progress-bar { height: 8px; background: #e5e7eb; border-radius: 8px; overflow: hidden; }
     .progress-bar > div { height: 100%; background: linear-gradient(90deg, #22c55e, #3b82f6); width: 0%; transition: width .2s ease; }
   </style>
@@ -91,8 +90,7 @@
         <div class="p-4 bg-blue-50/50 border border-blue-200 rounded-2xl text-sm md:text-base space-y-2">
           <p class="font-semibold text-blue-800 flex items-center gap-2">📋 Sujets supportés (combinez-les!)</p>
           <p class="text-blue-700">
-            Points: bus, stop, school, university, college, restaurant, cafe, bar, park, hospital, clinic, shop, store, atm, bank, hotel,
-            fountain, swimming_pool
+            Points: bus, stop, school, university, college, restaurant, cafe, bar, park, hospital, clinic, shop, store, atm, bank, hotel, fountain, swimming_pool
           </p>
           <p class="text-blue-700">
             Lignes/Surfaces: cycleway, footway, sidewalk, path, river, stream, canal, drain, ditch, wetlands, lake, pond, reservoir, basin
@@ -121,20 +119,33 @@
     </div>
   </div>
 
-  <!-- Analyse Discontinuités Panel -->
+  <!-- Analyse Gaps Panel -->
   <div id="analysisPanel" class="hidden absolute bottom-6 left-6 z-30">
-    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-5 border border-gray-200/50 space-y-3 min-w-[260px]">
+    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-5 border border-gray-200/50 space-y-3 min-w-[280px]">
       <div class="flex items-center gap-2">
-        <span class="text-xl">🚴</span>
-        <h3 class="font-bold text-gray-800">Discontinuités cyclables</h3>
+        <span class="text-xl">🕳️</span>
+        <h3 class="font-bold text-gray-800">Gaps réseau cyclable</h3>
       </div>
-      <div class="flex items-center gap-2 text-sm">
+
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <label class="flex flex-col">
+          <span class="text-gray-700">Seuil connexion (m)</span>
+          <input id="joinThreshold" type="number" min="1" value="15" class="mt-1 px-2 py-1 border rounded-md"/>
+        </label>
+        <label class="flex flex-col">
+          <span class="text-gray-700">Rayon gap max (m)</span>
+          <input id="gapRadius" type="number" min="10" value="120" class="mt-1 px-2 py-1 border rounded-md"/>
+        </label>
+      </div>
+
+      <div class="flex items-center gap-2 text-sm mt-1">
         <input id="includeBusLanes" type="checkbox" class="w-4 h-4">
         <label for="includeBusLanes" class="text-gray-700">Inclure les voies bus</label>
       </div>
+
       <button id="startAnalysis"
               class="w-full py-2.5 px-4 bg-gradient-to-r from-rose-500 to-orange-500 text-white font-semibold rounded-xl shadow hover:shadow-md transition">
-        Analyser
+        Analyser les gaps
       </button>
       <div id="analysisStatus" class="text-xs text-gray-600">En attente…</div>
       <div class="progress-bar"><div id="analysisProgress" style="width:0%"></div></div>
@@ -168,14 +179,13 @@
     }
     function preprocessTopics(text) {
       let s = normalize(text);
-      // Unifier le séparateur (and/et -> ,)
-      s = s.replace(/\s+(?:and|et)\s+/g, ',');
+      s = s.replace(/\s+(?:and|et)\s+/g, ','); // séparateur unique ,
       // Macros FR
       s = s.replace(/\breseaux?\s+d'?eaux?\b/g, 'reseaux_eau');
       s = s.replace(/\breseaux?\s+de\s+transports?\b/g, 'reseaux_transports');
       s = s.replace(/\b(voies?|bandes?|couloirs?)\s+(de\s+)?bus\b/g, 'bus_lanes');
       s = s.replace(/\bpistes?\s+cyclables?\b/g, 'cycleway');
-      // EN equivalences
+      // EN -> FR
       s = s.replace(/\bwater\s+networks?\b/g, 'reseaux_eau');
       s = s.replace(/\btransport\s+networks?\b/g, 'reseaux_transports');
       s = s.replace(/\bbus\s+lanes?\b/g, 'bus_lanes');
@@ -227,7 +237,7 @@
       path:       [{ type: 'way',  filter: '["highway"="path"]' }],
       pathway:    [{ type: 'way',  filter: '["highway"="path"]' }],
 
-      // Bus lanes (pas d'arrêts bus ici)
+      // Bus lanes (voies/couloirs bus) — pas d'arrêts bus ici
       bus_lanes: [
         { type: 'way', filter: '["highway"="busway"]' },
         { type: 'way', filter: '[~"^busway(:|$)"~"."]' },
@@ -238,11 +248,11 @@
         { type: 'way', filter: '["access"="no"]["bus"="yes"]' }
       ],
 
-      // Réseaux d'eau (sans fontaines ni piscines)
+      // Réseaux d'eau (sans fontaines/piscines => sujets individuels séparés)
       reseaux_eau: [
         // Lignes d'eau
         { type: 'way', filter: '["waterway"~"^(river|stream|canal|drain|ditch|wadi)$"]' },
-        // Surfaces d'eau (ways + relations)
+        // Surfaces d'eau
         { type: 'way',      filter: '["natural"="water"]' },
         { type: 'relation', filter: '["natural"="water"]["type"="multipolygon"]' },
         { type: 'way',      filter: '["waterway"="riverbank"]' },
@@ -252,7 +262,7 @@
         // Zones humides
         { type: 'way',      filter: '["natural"="wetland"]' },
         { type: 'relation', filter: '["natural"="wetland"]["type"="multipolygon"]' },
-        // Ouvrages/equipements (sans fontaines)
+        // Ouvrages / équipements (sans fountain/pool)
         { type: 'node', filter: '["natural"="spring"]' },
         { type: 'node', filter: '["man_made"~"^(water_tower|pumping_station|reservoir_covered|water_well|wastewater_plant)$"]' },
         { type: 'way',  filter: '["man_made"~"^(dam|water_tower|pumping_station|reservoir_covered|wastewater_plant)$"]' },
@@ -263,7 +273,7 @@
         // Littoral
         { type: 'way', filter: '["natural"="coastline"]' }
       ],
-      // Cours d'eau individuels
+      // Cours d’eau individuels
       river:  [{ type: 'way', filter: '["waterway"="river"]' }],
       stream: [{ type: 'way', filter: '["waterway"="stream"]' }],
       canal:  [{ type: 'way', filter: '["waterway"="canal"]' }],
@@ -291,7 +301,7 @@
         { type: 'relation', filter: '["landuse"="basin"]["type"="multipolygon"]' }
       ],
 
-      // Réseaux de transports (allégé pour éviter timeouts) → seulement des ways
+      // Réseaux de transports (allégé et fractionné par lots)
       reseaux_transports: [
         { type: 'way', filter: '["railway"~"^(rail|tram|light_rail|subway|narrow_gauge|monorail|funicular)$"]' },
         { type: 'way', filter: '[~"^aerialway"~"."]' },
@@ -300,7 +310,7 @@
         { type: 'way', filter: '[~"^bus:lanes"~"."]' }
       ],
 
-      // Zones d'analyse urbaine
+      // Zones d’analyse urbaine
       zone_commerciale: [
         { type: 'way',      filter: '["landuse"~"^(industrial|commercial|retail)$"]' },
         { type: 'relation', filter: '["landuse"~"^(industrial|commercial|retail)$"]["type"="multipolygon"]' },
@@ -323,7 +333,8 @@
     // État
     let featureLayers = [];
     let gapMarkers = [];
-    let lastFetchedElements = []; // pour l'analyse
+    let suggestionLines = [];
+    let lastFetchedElements = [];
 
     // DOM
     const searchInput = document.getElementById('searchInput');
@@ -346,8 +357,10 @@
     const zoomGaps = document.getElementById('zoomGaps');
     const clearGapsBtn = document.getElementById('clearGaps');
     const includeBusLanes = document.getElementById('includeBusLanes');
+    const joinThresholdInput = document.getElementById('joinThreshold');
+    const gapRadiusInput = document.getElementById('gapRadius');
 
-    // Icônes pour les points
+    // Icônes points
     function getIconForFeature(tags) {
       if (tags.highway === 'bus_stop') return L.AwesomeMarkers.icon({ icon: 'bus', prefix: 'fa', markerColor: 'blue' });
       if (['school','college','university'].includes(tags.amenity)) return L.AwesomeMarkers.icon({ icon: 'school', prefix: 'fa', markerColor: 'green' });
@@ -365,42 +378,30 @@
       return L.AwesomeMarkers.icon({ icon: 'info-circle', prefix: 'fa', markerColor: 'gray' });
     }
 
-    // Style des lignes/polygones
+    // Styles lignes/polygones
     function getStyleForFeature(tags) {
-      // Pistes / Chemins
       if (tags.highway === 'cycleway' || Object.keys(tags).some(k => /^cycleway/.test(k))) return { color: '#e11d48', weight: 3, opacity: 0.95 };
       if (tags.highway === 'footway')  return { color: '#8b5e3c', weight: 3, opacity: 0.9, dashArray: '6,4' };
       if (tags.highway === 'path')     return { color: '#7c3aed', weight: 3, opacity: 0.9, dashArray: '8,4' };
-
-      // Voies bus
       if (tags.highway === 'busway' || 'busway' in tags || Object.keys(tags).some(k => k.startsWith('bus:lanes'))) return { color: '#f59e0b', weight: 4, opacity: 0.95 };
-
-      // Cours d'eau
       if (tags.waterway === 'river')   return { color: '#1d4ed8', weight: 4, opacity: 0.9 };
       if (tags.waterway === 'canal')   return { color: '#0ea5e9', weight: 4, opacity: 0.9 };
       if (tags.waterway === 'stream')  return { color: '#60a5fa', weight: 3, opacity: 0.9 };
       if (tags.waterway === 'drain')   return { color: '#38bdf8', weight: 2.5, opacity: 0.9, dashArray: '4,3' };
       if (tags.waterway === 'ditch')   return { color: '#93c5fd', weight: 2.5, opacity: 0.9, dashArray: '4,3' };
       if (['weir','lock_gate','sluice_gate'].includes(tags.waterway)) return { color: '#22d3ee', weight: 2.5, opacity: 0.9, dashArray: '2,4' };
-
-      // Surfaces d'eau / zones humides / parcs
       if (tags.natural === 'water' || tags.water || tags.landuse === 'reservoir' || tags.natural === 'wetland' || tags.waterway === 'riverbank') {
         return { color: '#38bdf8', weight: 2, opacity: 0.8, fill: true, fillColor: '#93c5fd', fillOpacity: 0.35 };
       }
       if (tags.leisure === 'park')     return { color: '#16a34a', weight: 2, opacity: 0.8, fill: true, fillColor: '#86efac', fillOpacity: 0.25 };
-
-      // Rail / Aerialway / Transports
       if (tags.railway)   return { color: '#6b7280', weight: 3, opacity: 0.9, dashArray: '6,3' };
       if (tags.aerialway) return { color: '#fb7185', weight: 3, opacity: 0.9, dashArray: '4,4' };
-
-      // Zones
       if (tags.landuse === 'industrial' || tags.landuse === 'commercial' || tags.landuse === 'retail') {
         return { color: '#f97316', weight: 2, fill: true, fillColor: '#fdba74', fillOpacity: 0.25 };
       }
       if (tags.landuse === 'residential') {
         return { color: '#22c55e', weight: 2, fill: true, fillColor: '#86efac', fillOpacity: 0.25 };
       }
-
       return { color: '#555', weight: 2, opacity: 0.8 };
     }
 
@@ -445,9 +446,12 @@
       featureLayers = [];
       gapMarkers.forEach(m => map.removeLayer(m));
       gapMarkers = [];
+      suggestionLines.forEach(l => map.removeLayer(l));
+      suggestionLines = [];
       lastFetchedElements = [];
       gapCount.textContent = '0';
       zoomGaps.disabled = true;
+      setAnalysisProgress(0, 'En attente…');
     }
 
     function isClosedPolygon(geom) {
@@ -456,21 +460,20 @@
       return Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
     }
 
-    // Téléchargement Overpass par lots pour éviter les timeouts
+    // Téléchargement Overpass par lots pour éviter timeouts
     async function fetchOverpassBatches(bbox, nodeFilters, wayFilters, relFilters, onBatchProgress) {
-      // Construire tous les statements
       const statements = [];
       nodeFilters.forEach(f => statements.push(`node${f}(${bbox});`));
       wayFilters.forEach(f => statements.push(`way${f}(${bbox});`));
       relFilters.forEach(f => statements.push(`relation${f}(${bbox});`));
 
-      const maxPerBatch = 18; // limiter la complexité de chaque requête
+      const maxPerBatch = 18;
       const batches = [];
       for (let i = 0; i < statements.length; i += maxPerBatch) {
         batches.push(statements.slice(i, i + maxPerBatch));
       }
 
-      const elementsMap = new Map(); // de-dup: key = type:id
+      const elementsMap = new Map();
       for (let i = 0; i < batches.length; i++) {
         const parts = batches[i].join('\n  ');
         const query = `[out:json][timeout:180];
@@ -490,6 +493,7 @@ out geom;`;
           if (!elementsMap.has(key)) elementsMap.set(key, el);
         });
         if (onBatchProgress) onBatchProgress(i + 1, batches.length);
+        await new Promise(r => setTimeout(r, 60)); // petite pause
       }
       return Array.from(elementsMap.values());
     }
@@ -517,20 +521,16 @@ out geom;`;
         const bbox = `${south},${west},${north},${east}`;
         map.fitBounds([[south, west], [north, east]]);
 
-        // Téléchargement par lots avec progression
-        let lastBatch = 0;
+        // Téléchargement par lots
         const elements = await fetchOverpassBatches(bbox, nodeFilters, wayFilters, relFilters, (done, total) => {
-          lastBatch = done;
           downloadStatus.textContent = `Téléchargement ${done}/${total}…`;
         });
 
-        // Affichage des éléments
+        // Affichage
         elements.forEach(el => {
           const tags = el.tags || {};
           const name = tags.name || 'Élément sans nom';
           let layer;
-
-          // Popup
           let popup = `<div style="font-family: system-ui, sans-serif; line-height:1.4;">
             <h3 style="font-size:16px;font-weight:700;margin-bottom:8px;">${name}</h3>
             <div style="font-size:13px;max-height:150px;overflow-y:auto;">`;
@@ -541,29 +541,24 @@ out geom;`;
             layer = L.marker([el.lat, el.lon], { icon: getIconForFeature(tags) }).addTo(map);
           } else if ((el.type === 'way' || el.type === 'relation') && el.geometry && el.geometry.length > 1) {
             const latLngs = el.geometry.map(pt => [pt.lat, pt.lon]);
-            // Polygone si fermé + tags surface/zone
             if (isClosedPolygon(el.geometry) && (tags.natural === 'water' || tags.landuse === 'reservoir' || tags.natural === 'wetland' || tags.leisure === 'park' || tags.waterway === 'riverbank' || tags.landuse === 'residential' || ['industrial','commercial','retail'].includes(tags.landuse))) {
-              const style = getStyleForFeature(tags);
-              layer = L.polygon(latLngs, { ...style }).addTo(map);
+              layer = L.polygon(latLngs, { ...getStyleForFeature(tags) }).addTo(map);
             } else {
-              const style = getStyleForFeature(tags);
-              layer = L.polyline(latLngs, style).addTo(map);
+              layer = L.polyline(latLngs, getStyleForFeature(tags)).addTo(map);
             }
           }
-
           if (layer) {
             layer.bindPopup(popup, { maxWidth: 320 });
             featureLayers.push(layer);
           }
         });
 
-        lastFetchedElements = elements; // pour l'analyse
+        lastFetchedElements = elements;
         if (featureLayers.length > 0) {
           resultCount.textContent = featureLayers.length;
           resultsCounter.classList.remove('hidden');
         }
 
-        // UI
         searchPanel.classList.add('hidden');
         newSearchButton.classList.remove('hidden');
         analysisPanel.classList.remove('hidden');
@@ -576,18 +571,17 @@ out geom;`;
       }
     }
 
-    // ---- Analyse Dangling Ends (in-browser) ----
+    // ---- Analyse des GAPS entre réseaux cyclables ----
+
     function toRad(x) { return x * Math.PI / 180; }
     function haversine(a, b) {
       const R = 6371000;
       const dLat = toRad(b.lat - a.lat);
       const dLon = toRad(b.lon - a.lon);
-      const lat1 = toRad(a.lat);
-      const lat2 = toRad(b.lat);
+      const lat1 = toRad(a.lat), lat2 = toRad(b.lat);
       const s = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
       return 2 * R * Math.asin(Math.sqrt(s));
     }
-
     function isCycleLike(tags) {
       return tags.highway === 'cycleway'
         || Object.keys(tags).some(k => /^cycleway/.test(k))
@@ -598,164 +592,238 @@ out geom;`;
     function isBusLaneLike(tags) {
       return tags.highway === 'busway' || 'busway' in tags || Object.keys(tags).some(k => k.startsWith('bus:lanes')) || tags.bus === 'designated' || tags.psv === 'designated';
     }
-
     function setAnalysisProgress(pct, msg) {
       analysisProgress.style.width = `${Math.min(100, Math.max(0, pct))}%`;
       analysisStatus.textContent = msg;
     }
 
-    async function runDanglingAnalysis() {
+    function getNodeId(lat, lon, precision) {
+      return `${Math.round(lat * precision)}_${Math.round(lon * precision)}`;
+    }
+
+    async function runNetworkGapsAnalysis() {
       if (!lastFetchedElements || lastFetchedElements.length === 0) {
         analysisStatus.textContent = "Aucun réseau chargé.";
         return;
       }
-      // Paramètres
-      const includeBus = includeBusLanes.checked;
-      const thresholdMeters = 15; // rayon de jonction
-      const deltaLat = thresholdMeters / 111320; // ≈ deg lat
-      const centerLat = map.getCenter().lat;
-      const deltaLon = thresholdMeters / (111320 * Math.cos(centerLat * Math.PI / 180));
 
-      // 1) Collecter les polylines pertinentes
-      setAnalysisProgress(5, 'Collecte des tronçons…');
+      const includeBus = includeBusLanes.checked;
+      const joinThreshold = Math.max(1, Number(joinThresholdInput.value) || 15); // m
+      const gapRadius = Math.max(joinThreshold + 1, Number(gapRadiusInput.value) || 120); // m
+      const precision = 1e7;
+
+      // 1) Collecter les voies pertinentes (cycle + option bus lanes)
+      setAnalysisProgress(5, 'Collecte des tronçons cyclables…');
       const polylines = [];
-      lastFetchedElements.forEach(el => {
+      for (const el of lastFetchedElements) {
         if ((el.type === 'way' || el.type === 'relation') && el.geometry && el.geometry.length > 1) {
           const tags = el.tags || {};
           if (isCycleLike(tags) || (includeBus && isBusLaneLike(tags))) {
             polylines.push({ id: `${el.type}:${el.id}`, tags, geom: el.geometry });
           }
         }
-      });
+      }
       if (polylines.length === 0) {
         setAnalysisProgress(100, 'Aucune voie cyclable/voies bus à analyser.');
         return;
       }
 
-      // 2) Extraire endpoints (sauter polygones fermés)
-      setAnalysisProgress(15, 'Extraction des extrémités…');
-      const endpoints = []; // {lat, lon, id, which:0/1}
-      for (const pl of polylines) {
-        const g = pl.geom;
-        if (isClosedPolygon(g)) continue;
-        const a = g[0], b = g[g.length - 1];
-        endpoints.push({ lat: a.lat, lon: a.lon, id: pl.id, which: 0 });
-        endpoints.push({ lat: b.lat, lon: b.lon, id: pl.id, which: 1 });
-      }
-      if (endpoints.length === 0) {
-        setAnalysisProgress(100, 'Aucune extrémité détectée.');
-        return;
+      // 2) Construire le graphe (nœuds = sommets quantifiés)
+      setAnalysisProgress(20, 'Construction du graphe…');
+      const graph = new Map(); // nodeId -> Set(neighborId)
+      const nodeCoord = new Map(); // nodeId -> {lat, lon}
+
+      function ensureNode(lat, lon) {
+        const id = getNodeId(lat, lon, precision);
+        if (!graph.has(id)) graph.set(id, new Set());
+        if (!nodeCoord.has(id)) nodeCoord.set(id, { lat, lon });
+        return id;
       }
 
-      // 3) Index en grille pour endpoints
-      setAnalysisProgress(30, 'Indexation…');
+      for (let p = 0; p < polylines.length; p++) {
+        const g = polylines[p].geom;
+        for (let i = 0; i < g.length - 1; i++) {
+          const a = g[i], b = g[i+1];
+          const idA = ensureNode(a.lat, a.lon);
+          const idB = ensureNode(b.lat, b.lon);
+          graph.get(idA).add(idB);
+          graph.get(idB).add(idA);
+        }
+        if ((p % 500) === 0) {
+          setAnalysisProgress(20 + Math.floor(10 * p / polylines.length), `Construction du graphe… ${p}/${polylines.length}`);
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+
+      // 3) Détecter les endpoints (degré 1) et créer un index spatial grille
+      setAnalysisProgress(32, 'Indexation des extrémités…');
+      const endpoints = []; // [{id,lat,lon}]
+      graph.forEach((neighbors, id) => {
+        if (neighbors.size === 1) {
+          const { lat, lon } = nodeCoord.get(id);
+          endpoints.push({ id, lat, lon });
+        }
+      });
+      // Index grille
+      const centerLat = map.getCenter().lat;
+      const degLat = joinThreshold / 111320;
+      const degLon = joinThreshold / (111320 * Math.cos(centerLat * Math.PI / 180));
       const grid = new Map();
-      function cellKey(lat, lon) {
-        const x = Math.floor(lon / deltaLon);
-        const y = Math.floor(lat / deltaLat);
+      function cellKey(lat, lon, dLat, dLon) {
+        const x = Math.floor(lon / dLon);
+        const y = Math.floor(lat / dLat);
         return `${x},${y}`;
       }
       endpoints.forEach((p, i) => {
-        const key = cellKey(p.lat, p.lon);
+        const key = cellKey(p.lat, p.lon, degLat, degLon);
         if (!grid.has(key)) grid.set(key, []);
         grid.get(key).push(i);
       });
 
-      // 4) Recherche de voisins endpoints (progressive)
-      setAnalysisProgress(35, 'Recherche de connexions…');
-      const connected = new Array(endpoints.length).fill(false);
-      const N = endpoints.length;
-      for (let i = 0; i < N; i++) {
+      // 4) Connexions virtuelles: joindre endpoints à ≤ joinThreshold (pour ne PAS créer de gap)
+      setAnalysisProgress(45, 'Jointure des extrémités proches…');
+      for (let i = 0; i < endpoints.length; i++) {
         const p = endpoints[i];
-        const cx = Math.floor(p.lon / deltaLon);
-        const cy = Math.floor(p.lat / deltaLat);
-        // voisinage 3x3
+        const cx = Math.floor(p.lon / degLon), cy = Math.floor(p.lat / degLat);
         for (let dx = -1; dx <= 1; dx++) {
           for (let dy = -1; dy <= 1; dy++) {
-            const neighborKey = `${cx + dx},${cy + dy}`;
-            const arr = grid.get(neighborKey);
+            const arr = grid.get(`${cx+dx},${cy+dy}`);
             if (!arr) continue;
             for (const j of arr) {
               if (j === i) continue;
               const q = endpoints[j];
-              if (q.id === p.id) continue;
-              const d = haversine({lat:p.lat,lon:p.lon}, {lat:q.lat,lon:q.lon});
-              if (d <= thresholdMeters) {
-                connected[i] = true;
-                connected[j] = true;
+              const d = haversine(p, q);
+              if (d <= joinThreshold) {
+                // ajouter arête virtuelle
+                graph.get(p.id).add(q.id);
+                graph.get(q.id).add(p.id);
               }
             }
           }
         }
         if ((i % 500) === 0) {
-          setAnalysisProgress(35 + Math.floor(40 * i / N), `Recherche de connexions… ${i}/${N}`);
-          await new Promise(r => setTimeout(r, 0)); // yield
-        }
-      }
-
-      // 5) Filtre secondaire: endpoint proche d’un vertex quelconque (réduit faux positifs)
-      setAnalysisProgress(75, 'Affinage (proximité segments)…');
-      // Index des vertices de toutes polylines
-      const vertexGrid = new Map();
-      const verts = [];
-      let vcount = 0;
-      for (const pl of polylines) {
-        for (const pt of pl.geom) {
-          const key = cellKey(pt.lat, pt.lon);
-          if (!vertexGrid.has(key)) vertexGrid.set(key, []);
-          vertexGrid.get(key).push(vcount);
-          verts.push(pt);
-          vcount++;
-        }
-      }
-      const danglingIdx = [];
-      for (let i = 0; i < endpoints.length; i++) {
-        if (connected[i]) continue; // déjà connecté
-        const p = endpoints[i];
-        const cx = Math.floor(p.lon / deltaLon);
-        const cy = Math.floor(p.lat / deltaLat);
-        let nearVertex = false;
-        for (let dx = -1; dx <= 1 && !nearVertex; dx++) {
-          for (let dy = -1; dy <= 1 && !nearVertex; dy++) {
-            const key = `${cx + dx},${cy + dy}`;
-            const arr = vertexGrid.get(key);
-            if (!arr) continue;
-            for (const idx of arr) {
-              const v = verts[idx];
-              const d = haversine({lat:p.lat, lon:p.lon}, v);
-              if (d <= thresholdMeters) { nearVertex = true; break; }
-            }
-          }
-        }
-        if (!nearVertex) danglingIdx.push(i);
-        if ((i % 500) === 0) {
-          setAnalysisProgress(75 + Math.floor(20 * i / endpoints.length), `Affinage… ${i}/${endpoints.length}`);
+          setAnalysisProgress(45 + Math.floor(10 * i / endpoints.length), `Jointure… ${i}/${endpoints.length}`);
           await new Promise(r => setTimeout(r, 0));
         }
       }
 
-      // 6) Affichage gaps
-      setAnalysisProgress(98, 'Affichage des gaps…');
-      gapMarkers.forEach(m => map.removeLayer(m));
-      gapMarkers = [];
-      for (const idx of danglingIdx) {
-        const p = endpoints[idx];
-        const m = L.circleMarker([p.lat, p.lon], {
-          radius: 6, color: '#dc2626', weight: 2, fillColor: '#ef4444', fillOpacity: 0.9
-        }).addTo(map);
-        m.bindPopup(`<b>Dangling-end</b><br/>Seuil: ${thresholdMeters} m<br/><small>${p.id}</small>`);
-        gapMarkers.push(m);
-      }
-      gapCount.textContent = String(danglingIdx.length);
-      if (gapMarkers.length > 0) {
-        const grp = L.featureGroup(gapMarkers);
-        zoomGaps.disabled = false;
-        // map.fitBounds(grp.getBounds().pad(0.2)); // Laisser l'utilisateur cliquer
-      } else {
-        zoomGaps.disabled = true;
+      // 5) Trouver les composantes connexes
+      setAnalysisProgress(58, 'Recherche des réseaux…');
+      const visited = new Set();
+      const components = []; // array of Set(nodeId)
+      for (const id of graph.keys()) {
+        if (visited.has(id)) continue;
+        const comp = new Set();
+        const q = [id];
+        visited.add(id);
+        while (q.length) {
+          const cur = q.shift();
+          comp.add(cur);
+          graph.get(cur).forEach(n => {
+            if (!visited.has(n)) { visited.add(n); q.push(n); }
+          });
+        }
+        components.push(comp);
       }
 
-      setAnalysisProgress(100, 'Analyse terminée ✔️');
+      // 6) Extraire endpoints de chaque composante (après jointure)
+      setAnalysisProgress(70, 'Extraction des extrémités par réseau…');
+      const compEndpoints = components.map(() => []);
+      const idToComp = new Map();
+      components.forEach((comp, idx) => comp.forEach(n => idToComp.set(n, idx)));
+      graph.forEach((neighbors, id) => {
+        if (neighbors.size === 1) {
+          const c = idToComp.get(id);
+          const { lat, lon } = nodeCoord.get(id);
+          compEndpoints[c].push({ id, lat, lon });
+        }
+      });
+
+      // 7) Chercher les gaps inter-composantes: meilleurs couples d’extrémités < gapRadius
+      setAnalysisProgress(80, 'Recherche des gaps inter-réseaux…');
+      // Index endpoints global pour recherche par rayon gapRadius
+      const degLatGap = gapRadius / 111320;
+      const degLonGap = gapRadius / (111320 * Math.cos(centerLat * Math.PI / 180));
+      const gridGap = new Map();
+      const allEndpoints = [];
+      compEndpoints.forEach((arr, compId) => {
+        arr.forEach(e => allEndpoints.push({ ...e, compId }));
+      });
+      allEndpoints.forEach((p, i) => {
+        const key = cellKey(p.lat, p.lon, degLatGap, degLonGap);
+        if (!gridGap.has(key)) gridGap.set(key, []);
+        gridGap.get(key).push(i);
+      });
+
+      // Pour chaque paire de composantes, garder le couple (i,j) le plus proche
+      const bestPairByComps = new Map(); // key "a|b" -> {i,j,d}
+      for (let i = 0; i < allEndpoints.length; i++) {
+        const p = allEndpoints[i];
+        const cx = Math.floor(p.lon / degLonGap), cy = Math.floor(p.lat / degLatGap);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            const arr = gridGap.get(`${cx+dx},${cy+dy}`);
+            if (!arr) continue;
+            for (const j of arr) {
+              if (j === i) continue;
+              const q = allEndpoints[j];
+              if (q.compId === p.compId) continue; // autre composante uniquement
+              const d = haversine(p, q);
+              if (d <= gapRadius && d > joinThreshold) {
+                const a = Math.min(p.compId, q.compId);
+                const b = Math.max(p.compId, q.compId);
+                const key = `${a}|${b}`;
+                const prev = bestPairByComps.get(key);
+                if (!prev || d < prev.d) bestPairByComps.set(key, { i, j, d });
+              }
+            }
+          }
+        }
+        if ((i % 500) === 0) {
+          setAnalysisProgress(80 + Math.floor(15 * i / allEndpoints.length), `Recherche gaps… ${i}/${allEndpoints.length}`);
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+
+      // 8) Affichage des gaps (lignes pointillées + marqueur milieu)
+      setAnalysisProgress(97, 'Affichage des gaps…');
+      suggestionLines.forEach(l => map.removeLayer(l));
+      suggestionLines = [];
+      gapMarkers.forEach(m => map.removeLayer(m));
+      gapMarkers = [];
+
+      const suggestions = Array.from(bestPairByComps.values());
+      suggestions.sort((a, b) => a.d - b.d); // gaps plus courts d’abord
+
+      suggestions.forEach(s => {
+        const P = allEndpoints[s.i], Q = allEndpoints[s.j];
+        const line = L.polyline([[P.lat, P.lon], [Q.lat, Q.lon]], {
+          color: '#111827', weight: 2.5, opacity: 0.9, dashArray: '6,6'
+        }).addTo(map);
+        const mid = { lat: (P.lat + Q.lat)/2, lon: (P.lon + Q.lon)/2 };
+        const m = L.circleMarker([mid.lat, mid.lon], {
+          radius: 6, color: '#111827', weight: 2, fillColor: '#fcd34d', fillOpacity: 0.95
+        }).addTo(map);
+        m.bindPopup(`<b>Gap suggéré</b><br/>Distance ≈ ${Math.round(s.d)} m`);
+        line.bindPopup(`<b>Gap inter-réseaux</b><br/>≈ ${Math.round(s.d)} m`);
+        suggestionLines.push(line);
+        gapMarkers.push(m);
+      });
+
+      gapCount.textContent = String(suggestions.length);
+      zoomGaps.disabled = suggestions.length === 0;
+      if (suggestions.length > 0) {
+        // Option: zoom sur tous les gaps
+        // const grp = L.featureGroup([...suggestionLines, ...gapMarkers]);
+        // map.fitBounds(grp.getBounds().pad(0.2));
+      }
+
+      // Résumé
+      if (components.length <= 1) {
+        setAnalysisProgress(100, 'Un seul réseau cyclable détecté ✔️');
+      } else {
+        setAnalysisProgress(100, `${components.length} réseaux détectés — ${suggestions.length} gaps potentiels`);
+      }
     }
 
     // ---- Écouteurs ----
@@ -774,16 +842,23 @@ out geom;`;
       resultsCounter.classList.add('hidden');
       errorDisplay.classList.add('hidden');
       analysisPanel.classList.add('hidden');
-      setAnalysisProgress(0, 'En attente…');
     });
 
-    startAnalysis.addEventListener('click', runDanglingAnalysis);
-    zoomGaps.addEventListener('click', () => {
-      if (gapMarkers.length === 0) return;
-      const grp = L.featureGroup(gapMarkers);
+    function setAnalysisProgress(pct, msg) {
+      analysisProgress.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      analysisStatus.textContent = msg;
+    }
+
+    document.getElementById('startAnalysis').addEventListener('click', runNetworkGapsAnalysis);
+    document.getElementById('zoomGaps').addEventListener('click', () => {
+      const all = [...suggestionLines, ...gapMarkers];
+      if (all.length === 0) return;
+      const grp = L.featureGroup(all);
       map.fitBounds(grp.getBounds().pad(0.2));
     });
-    clearGapsBtn.addEventListener('click', () => {
+    document.getElementById('clearGaps').addEventListener('click', () => {
+      suggestionLines.forEach(l => map.removeLayer(l));
+      suggestionLines = [];
       gapMarkers.forEach(m => map.removeLayer(m));
       gapMarkers = [];
       gapCount.textContent = '0';
