@@ -121,13 +121,13 @@
 
   <!-- Analyse Gaps Panel -->
   <div id="analysisPanel" class="hidden absolute bottom-6 left-6 z-30">
-    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-5 border border-gray-200/50 space-y-3 min-w-[280px]">
+    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-5 border border-gray-200/50 space-y-3 min-w-[320px]">
       <div class="flex items-center gap-2">
         <span class="text-xl">🕳️</span>
         <h3 class="font-bold text-gray-800">Gaps réseau cyclable</h3>
       </div>
 
-      <div class="grid grid-cols-2 gap-3 text-sm">
+      <div class="grid grid-cols-3 gap-3 text-sm">
         <label class="flex flex-col">
           <span class="text-gray-700">Seuil connexion (m)</span>
           <input id="joinThreshold" type="number" min="1" value="15" class="mt-1 px-2 py-1 border rounded-md"/>
@@ -135,6 +135,10 @@
         <label class="flex flex-col">
           <span class="text-gray-700">Rayon gap max (m)</span>
           <input id="gapRadius" type="number" min="10" value="120" class="mt-1 px-2 py-1 border rounded-md"/>
+        </label>
+        <label class="flex flex-col">
+          <span class="text-gray-700">Résolution (m)</span>
+          <input id="sampleResolution" type="number" min="10" max="200" value="50" class="mt-1 px-2 py-1 border rounded-md"/>
         </label>
       </div>
 
@@ -359,6 +363,7 @@
     const includeBusLanes = document.getElementById('includeBusLanes');
     const joinThresholdInput = document.getElementById('joinThreshold');
     const gapRadiusInput = document.getElementById('gapRadius');
+    const sampleResolutionInput = document.getElementById('sampleResolution');
 
     // Icônes points
     function getIconForFeature(tags) {
@@ -460,7 +465,7 @@
       return Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
     }
 
-    // Téléchargement Overpass par lots pour éviter timeouts
+    // Overpass par lots (évite timeouts)
     async function fetchOverpassBatches(bbox, nodeFilters, wayFilters, relFilters, onBatchProgress) {
       const statements = [];
       nodeFilters.forEach(f => statements.push(`node${f}(${bbox});`));
@@ -571,7 +576,7 @@ out geom;`;
       }
     }
 
-    // ---- Analyse des GAPS entre réseaux cyclables ----
+    // ---- Analyse des GAPS entre réseaux cyclables (avec échantillonnage) ----
 
     function toRad(x) { return x * Math.PI / 180; }
     function haversine(a, b) {
@@ -597,8 +602,21 @@ out geom;`;
       analysisStatus.textContent = msg;
     }
 
-    function getNodeId(lat, lon, precision) {
-      return `${Math.round(lat * precision)}_${Math.round(lon * precision)}`;
+    // Echantillonne des points uniformément le long du segment [start,end] (inclus)
+    function samplePointsOnSegment(start, end, resolutionMeters) {
+      const total = haversine(start, end);
+      if (!isFinite(total) || total <= 0) return [start, end];
+      if (total <= resolutionMeters) return [start, end];
+
+      const segments = Math.max(1, Math.round(total / resolutionMeters));
+      const points = [];
+      for (let k = 0; k <= segments; k++) {
+        const t = k / segments; // 0..1
+        const lat = start.lat + t * (end.lat - start.lat);
+        const lon = start.lon + t * (end.lon - start.lon);
+        points.push({ lat, lon });
+      }
+      return points;
     }
 
     async function runNetworkGapsAnalysis() {
@@ -608,9 +626,12 @@ out geom;`;
       }
 
       const includeBus = includeBusLanes.checked;
-      const joinThreshold = Math.max(1, Number(joinThresholdInput.value) || 15); // m
-      const gapRadius = Math.max(joinThreshold + 1, Number(gapRadiusInput.value) || 120); // m
+      const joinThreshold = Math.max(1, Number(joinThresholdInput?.value) || 15); // m
+      const gapRadius = Math.max(joinThreshold + 1, Number(gapRadiusInput?.value) || 120); // m
+      const sampleResolution = Math.max(10, Math.min(200, Number(sampleResolutionInput?.value) || 50)); // m
       const precision = 1e7;
+
+      setAnalysisProgress(3, `Préparation…`);
 
       // 1) Collecter les voies pertinentes (cycle + option bus lanes)
       setAnalysisProgress(5, 'Collecte des tronçons cyclables…');
@@ -628,11 +649,11 @@ out geom;`;
         return;
       }
 
-      // 2) Construire le graphe (nœuds = sommets quantifiés)
-      setAnalysisProgress(20, 'Construction du graphe…');
-      const graph = new Map(); // nodeId -> Set(neighborId)
+      // 2) Construire le graphe en échantillonnant tous les segments
+      setAnalysisProgress(12, `Construction du graphe (résolution ${sampleResolution} m)…`);
+      const graph = new Map();   // nodeId -> Set(neighborId)
       const nodeCoord = new Map(); // nodeId -> {lat, lon}
-
+      function getNodeId(lat, lon, prec) { return `${Math.round(lat * prec)}_${Math.round(lon * prec)}`; }
       function ensureNode(lat, lon) {
         const id = getNodeId(lat, lon, precision);
         if (!graph.has(id)) graph.set(id, new Set());
@@ -640,125 +661,125 @@ out geom;`;
         return id;
       }
 
+      let totalSegments = 0;
+      for (const pl of polylines) totalSegments += Math.max(0, pl.geom.length - 1);
+
+      let segProcessed = 0;
       for (let p = 0; p < polylines.length; p++) {
         const g = polylines[p].geom;
         for (let i = 0; i < g.length - 1; i++) {
-          const a = g[i], b = g[i+1];
-          const idA = ensureNode(a.lat, a.lon);
-          const idB = ensureNode(b.lat, b.lon);
-          graph.get(idA).add(idB);
-          graph.get(idB).add(idA);
-        }
-        if ((p % 500) === 0) {
-          setAnalysisProgress(20 + Math.floor(10 * p / polylines.length), `Construction du graphe… ${p}/${polylines.length}`);
-          await new Promise(r => setTimeout(r, 0));
+          const start = { lat: g[i].lat, lon: g[i].lon };
+          const end   = { lat: g[i+1].lat, lon: g[i+1].lon };
+
+          const sampled = samplePointsOnSegment(start, end, sampleResolution);
+          for (let j = 0; j < sampled.length - 1; j++) {
+            const A = sampled[j], B = sampled[j+1];
+            const idA = ensureNode(A.lat, A.lon);
+            const idB = ensureNode(B.lat, B.lon);
+            graph.get(idA).add(idB);
+            graph.get(idB).add(idA);
+          }
+
+          segProcessed++;
+          if ((segProcessed % 500) === 0) {
+            setAnalysisProgress(12 + Math.floor(18 * segProcessed / Math.max(1, totalSegments)),
+              `Construction du graphe… ${segProcessed}/${totalSegments}`);
+            await new Promise(r => setTimeout(r, 0));
+          }
         }
       }
 
-      // 3) Détecter les endpoints (degré 1) et créer un index spatial grille
-      setAnalysisProgress(32, 'Indexation des extrémités…');
-      const endpoints = []; // [{id,lat,lon}]
-      graph.forEach((neighbors, id) => {
-        if (neighbors.size === 1) {
-          const { lat, lon } = nodeCoord.get(id);
-          endpoints.push({ id, lat, lon });
-        }
-      });
-      // Index grille
+      const allNodes = Array.from(nodeCoord.entries()).map(([id, { lat, lon }]) => ({ id, lat, lon }));
+      setAnalysisProgress(30, `Noeuds générés: ${allNodes.length.toLocaleString('fr-FR')}`);
+
+      // 3) Connexions virtuelles: joindre points à ≤ joinThreshold
+      setAnalysisProgress(35, 'Jointure des points proches…');
       const centerLat = map.getCenter().lat;
-      const degLat = joinThreshold / 111320;
-      const degLon = joinThreshold / (111320 * Math.cos(centerLat * Math.PI / 180));
-      const grid = new Map();
+      const degLatJoin = joinThreshold / 111320;
+      const degLonJoin = joinThreshold / (111320 * Math.cos(centerLat * Math.PI / 180));
       function cellKey(lat, lon, dLat, dLon) {
         const x = Math.floor(lon / dLon);
         const y = Math.floor(lat / dLat);
         return `${x},${y}`;
       }
-      endpoints.forEach((p, i) => {
-        const key = cellKey(p.lat, p.lon, degLat, degLon);
-        if (!grid.has(key)) grid.set(key, []);
-        grid.get(key).push(i);
-      });
+      const gridJoin = new Map();
+      for (let i = 0; i < allNodes.length; i++) {
+        const n = allNodes[i];
+        const key = cellKey(n.lat, n.lon, degLatJoin, degLonJoin);
+        if (!gridJoin.has(key)) gridJoin.set(key, []);
+        gridJoin.get(key).push(i);
+      }
 
-      // 4) Connexions virtuelles: joindre endpoints à ≤ joinThreshold (pour ne PAS créer de gap)
-      setAnalysisProgress(45, 'Jointure des extrémités proches…');
-      for (let i = 0; i < endpoints.length; i++) {
-        const p = endpoints[i];
-        const cx = Math.floor(p.lon / degLon), cy = Math.floor(p.lat / degLat);
+      for (let i = 0; i < allNodes.length; i++) {
+        const p = allNodes[i];
+        const cx = Math.floor(p.lon / degLonJoin);
+        const cy = Math.floor(p.lat / degLatJoin);
         for (let dx = -1; dx <= 1; dx++) {
           for (let dy = -1; dy <= 1; dy++) {
-            const arr = grid.get(`${cx+dx},${cy+dy}`);
+            const arr = gridJoin.get(`${cx+dx},${cy+dy}`);
             if (!arr) continue;
             for (const j of arr) {
               if (j === i) continue;
-              const q = endpoints[j];
-              const d = haversine(p, q);
+              const q = allNodes[j];
+              const d = haversine({ lat: p.lat, lon: p.lon }, { lat: q.lat, lon: q.lon });
               if (d <= joinThreshold) {
-                // ajouter arête virtuelle
                 graph.get(p.id).add(q.id);
                 graph.get(q.id).add(p.id);
               }
             }
           }
         }
-        if ((i % 500) === 0) {
-          setAnalysisProgress(45 + Math.floor(10 * i / endpoints.length), `Jointure… ${i}/${endpoints.length}`);
+        if ((i % 2000) === 0) {
+          setAnalysisProgress(35 + Math.floor(15 * i / Math.max(1, allNodes.length)), `Jointure… ${i}/${allNodes.length}`);
           await new Promise(r => setTimeout(r, 0));
         }
       }
 
-      // 5) Trouver les composantes connexes
-      setAnalysisProgress(58, 'Recherche des réseaux…');
+      // 4) Composantes connexes
+      setAnalysisProgress(52, 'Recherche des réseaux…');
       const visited = new Set();
       const components = []; // array of Set(nodeId)
-      for (const id of graph.keys()) {
-        if (visited.has(id)) continue;
+      for (let idx = 0; idx < allNodes.length; idx++) {
+        const startId = allNodes[idx].id;
+        if (visited.has(startId)) continue;
         const comp = new Set();
-        const q = [id];
-        visited.add(id);
+        const q = [startId];
+        visited.add(startId);
         while (q.length) {
           const cur = q.shift();
           comp.add(cur);
-          graph.get(cur).forEach(n => {
+          graph.get(cur)?.forEach(n => {
             if (!visited.has(n)) { visited.add(n); q.push(n); }
           });
         }
         components.push(comp);
+        if ((idx % 5000) === 0) {
+          setAnalysisProgress(52 + Math.floor(10 * idx / Math.max(1, allNodes.length)), `Réseaux… ${idx}/${allNodes.length}`);
+          await new Promise(r => setTimeout(r, 0));
+        }
       }
 
-      // 6) Extraire endpoints de chaque composante (après jointure)
-      setAnalysisProgress(70, 'Extraction des extrémités par réseau…');
-      const compEndpoints = components.map(() => []);
+      // 5) Index de tous les points pour la recherche de gaps inter-composantes
+      setAnalysisProgress(64, 'Indexation pour les gaps…');
       const idToComp = new Map();
-      components.forEach((comp, idx) => comp.forEach(n => idToComp.set(n, idx)));
-      graph.forEach((neighbors, id) => {
-        if (neighbors.size === 1) {
-          const c = idToComp.get(id);
-          const { lat, lon } = nodeCoord.get(id);
-          compEndpoints[c].push({ id, lat, lon });
-        }
-      });
+      components.forEach((comp, cid) => comp.forEach(n => idToComp.set(n, cid)));
+      const nodesWithComp = allNodes.map(n => ({ ...n, compId: idToComp.get(n.id) }));
 
-      // 7) Chercher les gaps inter-composantes: meilleurs couples d’extrémités < gapRadius
-      setAnalysisProgress(80, 'Recherche des gaps inter-réseaux…');
-      // Index endpoints global pour recherche par rayon gapRadius
       const degLatGap = gapRadius / 111320;
       const degLonGap = gapRadius / (111320 * Math.cos(centerLat * Math.PI / 180));
       const gridGap = new Map();
-      const allEndpoints = [];
-      compEndpoints.forEach((arr, compId) => {
-        arr.forEach(e => allEndpoints.push({ ...e, compId }));
-      });
-      allEndpoints.forEach((p, i) => {
-        const key = cellKey(p.lat, p.lon, degLatGap, degLonGap);
+      for (let i = 0; i < nodesWithComp.length; i++) {
+        const n = nodesWithComp[i];
+        const key = cellKey(n.lat, n.lon, degLatGap, degLonGap);
         if (!gridGap.has(key)) gridGap.set(key, []);
         gridGap.get(key).push(i);
-      });
+      }
 
-      // Pour chaque paire de composantes, garder le couple (i,j) le plus proche
-      const bestPairByComps = new Map(); // key "a|b" -> {i,j,d}
-      for (let i = 0; i < allEndpoints.length; i++) {
-        const p = allEndpoints[i];
+      // 6) Chercher, pour chaque paire de composantes, le couple de points le plus proche dans [joinThreshold, gapRadius]
+      setAnalysisProgress(75, 'Recherche des gaps inter-réseaux…');
+      const bestPairByComps = new Map(); // "a|b" -> {i,j,d}
+      for (let i = 0; i < nodesWithComp.length; i++) {
+        const p = nodesWithComp[i];
         const cx = Math.floor(p.lon / degLonGap), cy = Math.floor(p.lat / degLatGap);
         for (let dx = -1; dx <= 1; dx++) {
           for (let dy = -1; dy <= 1; dy++) {
@@ -766,10 +787,10 @@ out geom;`;
             if (!arr) continue;
             for (const j of arr) {
               if (j === i) continue;
-              const q = allEndpoints[j];
-              if (q.compId === p.compId) continue; // autre composante uniquement
+              const q = nodesWithComp[j];
+              if (q.compId === p.compId) continue;
               const d = haversine(p, q);
-              if (d <= gapRadius && d > joinThreshold) {
+              if (d > joinThreshold && d <= gapRadius) {
                 const a = Math.min(p.compId, q.compId);
                 const b = Math.max(p.compId, q.compId);
                 const key = `${a}|${b}`;
@@ -779,24 +800,22 @@ out geom;`;
             }
           }
         }
-        if ((i % 500) === 0) {
-          setAnalysisProgress(80 + Math.floor(15 * i / allEndpoints.length), `Recherche gaps… ${i}/${allEndpoints.length}`);
+        if ((i % 4000) === 0) {
+          setAnalysisProgress(75 + Math.floor(20 * i / Math.max(1, nodesWithComp.length)), `Recherche gaps… ${i}/${nodesWithComp.length}`);
           await new Promise(r => setTimeout(r, 0));
         }
       }
 
-      // 8) Affichage des gaps (lignes pointillées + marqueur milieu)
+      // 7) Affichage des gaps
       setAnalysisProgress(97, 'Affichage des gaps…');
       suggestionLines.forEach(l => map.removeLayer(l));
       suggestionLines = [];
       gapMarkers.forEach(m => map.removeLayer(m));
       gapMarkers = [];
 
-      const suggestions = Array.from(bestPairByComps.values());
-      suggestions.sort((a, b) => a.d - b.d); // gaps plus courts d’abord
-
+      const suggestions = Array.from(bestPairByComps.values()).sort((a, b) => a.d - b.d);
       suggestions.forEach(s => {
-        const P = allEndpoints[s.i], Q = allEndpoints[s.j];
+        const P = nodesWithComp[s.i], Q = nodesWithComp[s.j];
         const line = L.polyline([[P.lat, P.lon], [Q.lat, Q.lon]], {
           color: '#111827', weight: 2.5, opacity: 0.9, dashArray: '6,6'
         }).addTo(map);
@@ -812,17 +831,11 @@ out geom;`;
 
       gapCount.textContent = String(suggestions.length);
       zoomGaps.disabled = suggestions.length === 0;
-      if (suggestions.length > 0) {
-        // Option: zoom sur tous les gaps
-        // const grp = L.featureGroup([...suggestionLines, ...gapMarkers]);
-        // map.fitBounds(grp.getBounds().pad(0.2));
-      }
 
-      // Résumé
       if (components.length <= 1) {
-        setAnalysisProgress(100, 'Un seul réseau cyclable détecté ✔️');
+        setAnalysisProgress(100, `Un seul réseau détecté ✔️ — points: ${allNodes.length.toLocaleString('fr-FR')}`);
       } else {
-        setAnalysisProgress(100, `${components.length} réseaux détectés — ${suggestions.length} gaps potentiels`);
+        setAnalysisProgress(100, `${components.length} réseaux — ${suggestions.length} gaps — points: ${allNodes.length.toLocaleString('fr-FR')}`);
       }
     }
 
@@ -843,11 +856,6 @@ out geom;`;
       errorDisplay.classList.add('hidden');
       analysisPanel.classList.add('hidden');
     });
-
-    function setAnalysisProgress(pct, msg) {
-      analysisProgress.style.width = `${Math.min(100, Math.max(0, pct))}%`;
-      analysisStatus.textContent = msg;
-    }
 
     document.getElementById('startAnalysis').addEventListener('click', runNetworkGapsAnalysis);
     document.getElementById('zoomGaps').addEventListener('click', () => {
