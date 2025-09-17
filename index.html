@@ -2,15 +2,15 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>OSM Data Explorer</title>
 
   <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
   <!-- Font Awesome + Awesome Markers -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -40,10 +40,10 @@
     <div class="max-w-7xl mx-auto text-center md:text-left">
       <h1 class="text-3xl md:text-5xl font-black mb-2 drop-shadow-lg">🌍 OSM Data Explorer</h1>
       <p class="text-lg md:text-xl opacity-95 max-w-3xl mx-auto md:mx-0 leading-relaxed">
-        Décrivez ce que vous voulez voir (points et lignes) et regardez-le apparaître sur la carte.
+        Décrivez ce que vous voulez voir (points, lignes, réseaux) et regardez-le apparaître sur la carte.
       </p>
       <p class="text-sm md:text-base mt-4 opacity-80 italic">
-        Données en temps réel via l'API Overpass. Le zoom s'ajuste automatiquement !
+        Données en temps réel via Overpass. Le zoom s'ajuste automatiquement.
       </p>
     </div>
   </header>
@@ -66,9 +66,9 @@
             🔍 Que voulez-vous explorer?
           </label>
           <input id="searchInput" type="text"
-                 value="cycleway and footway and river in Bordeaux"
+                 value="cycleway and réseaux d'eau in Bordeaux"
                  class="w-full px-6 py-4 text-lg bg-gradient-to-r from-gray-50 to-blue-50 border-2 border-gray-300 rounded-2xl focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:border-transparent shadow-xl transition-all duration-300 placeholder-gray-500 font-medium"
-                 placeholder="Ex: bus stops in Lyon, cycleway and river in Toulouse" />
+                 placeholder="Ex: réseaux d'eau in Lyon, réseaux de transports in Paris, bus lanes in Toulouse"/>
         </div>
 
         <button id="searchButton"
@@ -92,7 +92,10 @@
           <p class="text-blue-700">
             Lignes: cycleway, footway, sidewalk, path, river, stream, canal, drain, ditch
           </p>
-          <p class="text-gray-600 text-xs italic">Astuce: “and” ou “et” fonctionnent (ex: cycleway et river in Paris).</p>
+          <p class="text-blue-700">
+            Macros: réseaux d'eau, réseaux de transports, bus lanes (voies bus)
+          </p>
+          <p class="text-gray-600 text-xs italic">“and” ou “et” fonctionnent. Ex: cycleway et réseaux d'eau in Paris.</p>
         </div>
       </div>
     </div>
@@ -127,42 +130,132 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.min.js"></script>
 
   <script>
-    // Mots-clés → type + filtre Overpass
+    // Normalisation simple pour reconnaitre les macros FR, enlever accents/apostrophes
+    function normalize(str) {
+      return (str || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+    }
+    function preprocessTopics(text) {
+      let s = normalize(text);
+      // Unifier le séparateur (and/et -> ,)
+      s = s.replace(/\s+(?:and|et)\s+/g, ',');
+      // Macros et synonymes FR
+      s = s.replace(/\breseaux?\s+d'?eaux?\b/g, 'reseaux_eau');
+      s = s.replace(/\breseaux?\s+de\s+transports?\b/g, 'reseaux_transports');
+      s = s.replace(/\b(voies?|bandes?|couloirs?)\s+(de\s+)?bus\b/g, 'bus_lanes');
+      s = s.replace(/\bpistes?\s+cyclables?\b/g, 'cycleway');
+      return s;
+    }
+
+    // Mots-clés → tableau de définitions {type: node|way|relation, filter: Overpass selector}
     const topics = {
-      // Points (nodes)
-      bus:      [{ type: 'node', filter: '["highway"="bus_stop"]' }],
-      stop:     [{ type: 'node', filter: '["highway"="bus_stop"]' }],
-      school:   [{ type: 'node', filter: '["amenity"="school"]' }],
-      university:[{ type: 'node', filter: '["amenity"="university"]' }],
-      college:  [{ type: 'node', filter: '["amenity"="college"]' }],
-      restaurant:[{ type: 'node', filter: '["amenity"="restaurant"]' }],
-      cafe:     [{ type: 'node', filter: '["amenity"="cafe"]' }],
-      bar:      [{ type: 'node', filter: '["amenity"="bar"]' }],
-      hospital: [{ type: 'node', filter: '["amenity"="hospital"]' }],
-      clinic:   [{ type: 'node', filter: '["amenity"="clinic"]' }],
-      shop:     [{ type: 'node', filter: '[shop]' }],
-      store:    [{ type: 'node', filter: '[shop]' }],
-      atm:      [{ type: 'node', filter: '["amenity"="atm"]' }],
-      bank:     [{ type: 'node', filter: '["amenity"="bank"]' }],
-      hotel:    [{ type: 'node', filter: '["tourism"="hotel"]' }],
-      // Parcs (souvent des ways, mais gardons les nodes si présents)
-      park:     [{ type: 'way',  filter: '["leisure"="park"]' }, { type: 'node', filter: '["leisure"="park"]' }],
+      // Points classiques
+      bus:        [{ type: 'node', filter: '["highway"="bus_stop"]' }],
+      stop:       [{ type: 'node', filter: '["highway"="bus_stop"]' }],
+      school:     [{ type: 'node', filter: '["amenity"="school"]' }],
+      university: [{ type: 'node', filter: '["amenity"="university"]' }],
+      college:    [{ type: 'node', filter: '["amenity"="college"]' }],
+      restaurant: [{ type: 'node', filter: '["amenity"="restaurant"]' }],
+      cafe:       [{ type: 'node', filter: '["amenity"="cafe"]' }],
+      bar:        [{ type: 'node', filter: '["amenity"="bar"]' }],
+      hospital:   [{ type: 'node', filter: '["amenity"="hospital"]' }],
+      clinic:     [{ type: 'node', filter: '["amenity"="clinic"]' }],
+      shop:       [{ type: 'node', filter: '[shop]' }],
+      store:      [{ type: 'node', filter: '[shop]' }],
+      atm:        [{ type: 'node', filter: '["amenity"="atm"]' }],
+      bank:       [{ type: 'node', filter: '["amenity"="bank"]' }],
+      hotel:      [{ type: 'node', filter: '["tourism"="hotel"]' }],
+      // Parcs (souvent polygons/ways)
+      park: [
+        { type: 'way',      filter: '["leisure"="park"]' },
+        { type: 'relation', filter: '["leisure"="park"]["type"="multipolygon"]' }
+      ],
 
-      // Lignes (ways)
-      cycleway: [{ type: 'way',  filter: '["highway"="cycleway"]' }],
-      bike:     [{ type: 'way',  filter: '["highway"="cycleway"]' }],
-      footway:  [{ type: 'way',  filter: '["highway"="footway"]' }],
-      sidewalk: [{ type: 'way',  filter: '["highway"="footway"]["footway"="sidewalk"]' }],
-      path:     [{ type: 'way',  filter: '["highway"="path"]' }],
-      pathway:  [{ type: 'way',  filter: '["highway"="path"]' }], // correction de "pathway" -> "path"
+      // Infrastructures cyclables (tous types)
+      // - highway=cycleway
+      // - présence de clé "cycleway" ou "cycleway:left/right/both"
+      // - bicycle_road=yes
+      // - chemins désignés vélo
+      cycleway: [
+        { type: 'way', filter: '["highway"="cycleway"]' },
+        { type: 'way', filter: '[~"^cycleway"~"."]' },
+        { type: 'way', filter: '["bicycle_road"="yes"]' },
+        { type: 'way', filter: '["highway"="path"]["bicycle"~"^(designated|official)$"]' },
+        { type: 'way', filter: '["highway"="footway"]["bicycle"~"^(designated|official)$"]' }
+      ],
+      footway:    [{ type: 'way',  filter: '["highway"="footway"]' }],
+      sidewalk:   [{ type: 'way',  filter: '["highway"="footway"]["footway"="sidewalk"]' }],
+      path:       [{ type: 'way',  filter: '["highway"="path"]' }],
+      pathway:    [{ type: 'way',  filter: '["highway"="path"]' }], // alias
 
-      // Cours d'eau (ways)
-      river:    [{ type: 'way',  filter: '["waterway"="river"]' }],
-      stream:   [{ type: 'way',  filter: '["waterway"="stream"]' }],
-      canal:    [{ type: 'way',  filter: '["waterway"="canal"]' }],
-      drain:    [{ type: 'way',  filter: '["waterway"="drain"]' }],
-      ditch:    [{ type: 'way',  filter: '["waterway"="ditch"]' }],
-      watercourse: [{ type: 'way', filter: '["waterway"~"^(river|stream|canal|drain|ditch)$"]' }],
+      // Voies / bandes / couloirs bus
+      bus_lanes: [
+        { type: 'way', filter: '["highway"="busway"]' },
+        { type: 'way', filter: '[~"^busway(:|$)"~"."]' },
+        { type: 'way', filter: '[~"^bus:lanes"~"."]' },
+        { type: 'way', filter: '["psv"="designated"]' },
+        { type: 'way', filter: '["bus"="designated"]' },
+        { type: 'way', filter: '["access"="no"]["psv"="yes"]' },
+        { type: 'way', filter: '["access"="no"]["bus"="yes"]' }
+      ],
+
+      // Réseaux d'eau étendu
+      // - waterway: river, stream, canal, drain, ditch, wadi
+      // - surfaces d'eau: natural=water (+ water=lake, pond, reservoir, basin, lagoon, oxbow, canal/river/stream, wastewater)
+      // - landuse=reservoir/basin ; waterway=riverbank (héritage)
+      // - zones humides: natural=wetland (tous types)
+      // - ouvrages: man_made=dam, water_tower, reservoir_covered, pumping_station; waterway=weir, lock_gate, sluice_gate
+      // - points: natural=spring, amenity=fountain/drinking_water
+      reseaux_eau: [
+        // Lignes d'eau
+        { type: 'way', filter: '["waterway"~"^(river|stream|canal|drain|ditch|wadi)$"]' },
+        // Surfaces d'eau (ways + relations)
+        { type: 'way',      filter: '["natural"="water"]' },
+        { type: 'relation', filter: '["natural"="water"]["type"="multipolygon"]' },
+        { type: 'way',      filter: '["waterway"="riverbank"]' },
+        { type: 'relation', filter: '["waterway"="riverbank"]["type"="multipolygon"]' },
+        { type: 'way',      filter: '["landuse"~"^(reservoir|basin)$"]' },
+        { type: 'relation', filter: '["landuse"~"^(reservoir|basin)$"]["type"="multipolygon"]' },
+        // Zones humides
+        { type: 'way',      filter: '["natural"="wetland"]' },
+        { type: 'relation', filter: '["natural"="wetland"]["type"="multipolygon"]' },
+        // Equipements/ouvrages
+        { type: 'node', filter: '["natural"="spring"]' },
+        { type: 'node', filter: '["amenity"="fountain"]' },
+        { type: 'node', filter: '["amenity"="drinking_water"]' },
+        { type: 'node', filter: '["man_made"~"^(water_tower|pumping_station|reservoir_covered|water_well|wastewater_plant)$"]' },
+        { type: 'way',  filter: '["man_made"~"^(dam|water_tower|pumping_station|reservoir_covered|wastewater_plant)$"]' },
+        { type: 'way',  filter: '["waterway"~"^(weir|lock_gate|sluice_gate)$"]' },
+        // Eau (détails water=*)
+        { type: 'way',      filter: '["natural"="water"]["water"~"^(lake|pond|reservoir|basin|lagoon|oxbow|canal|river|stream|wastewater)$"]' },
+        { type: 'relation', filter: '["natural"="water"]["water"~"^(lake|pond|reservoir|basin|lagoon|oxbow|canal|river|stream|wastewater)$"]["type"="multipolygon"]' },
+        // Littoral
+        { type: 'way', filter: '["natural"="coastline"]' }
+      ],
+
+      // Réseaux de transports (grands axes: rail, tram/métro, téléportés, busways/voies bus, arrêts principaux)
+      reseaux_transports: [
+        // Rail
+        { type: 'way', filter: '["railway"~"^(rail|tram|light_rail|subway|narrow_gauge|monorail|funicular)$"]' },
+        { type: 'node', filter: '["railway"~"^(station|halt|tram_stop|subway_entrance)$"]' },
+        // Aerialway (téléphériques, télécabines, etc.)
+        { type: 'way', filter: '[~"^aerialway"~"."]' },
+        // Busways et voies bus
+        { type: 'way', filter: '["highway"="busway"]' },
+        { type: 'way', filter: '[~"^busway(:|$)"~"."]' },
+        { type: 'way', filter: '[~"^bus:lanes"~"."]' },
+        // Arrêts majeurs de bus
+        { type: 'node', filter: '["highway"="bus_stop"]' },
+        { type: 'node', filter: '["amenity"="bus_station"]' }
+      ],
+
+      // Cours d'eau individuels (si l'utilisateur tape directement river, stream, etc.)
+      river:  [{ type: 'way', filter: '["waterway"="river"]' }],
+      stream: [{ type: 'way', filter: '["waterway"="stream"]' }],
+      canal:  [{ type: 'way', filter: '["waterway"="canal"]' }],
+      drain:  [{ type: 'way', filter: '["waterway"="drain"]' }],
+      ditch:  [{ type: 'way', filter: '["waterway"="ditch"]' }]
     };
 
     // Carte
@@ -199,58 +292,76 @@
       if (tags.amenity === 'atm') return L.AwesomeMarkers.icon({ icon: 'money-bill-wave', prefix: 'fa', markerColor: 'darkgreen' });
       if (tags.tourism === 'hotel') return L.AwesomeMarkers.icon({ icon: 'bed', prefix: 'fa', markerColor: 'cadetblue' });
       if (tags.leisure === 'park') return L.AwesomeMarkers.icon({ icon: 'tree', prefix: 'fa', markerColor: 'darkgreen' });
+      if (tags.natural === 'spring') return L.AwesomeMarkers.icon({ icon: 'tint', prefix: 'fa', markerColor: 'darkblue' });
+      if (tags.amenity === 'fountain' || tags.amenity === 'drinking_water') return L.AwesomeMarkers.icon({ icon: 'faucet', prefix: 'fa', markerColor: 'blue' });
       return L.AwesomeMarkers.icon({ icon: 'info-circle', prefix: 'fa', markerColor: 'gray' });
     }
 
-    // Style des lignes
+    // Style des lignes/polygones
     function getStyleForFeature(tags) {
       // Pistes / Chemins
-      if (tags.highway === 'cycleway') return { color: '#e11d48', weight: 3, opacity: 0.9 };        // rose/rouge
-      if (tags.highway === 'footway')  return { color: '#8b5e3c', weight: 3, opacity: 0.9, dashArray: '6,4' }; // brun pointillé
-      if (tags.highway === 'path')     return { color: '#7c3aed', weight: 3, opacity: 0.9, dashArray: '8,4' }; // violet
+      if (tags.highway === 'cycleway' || /(^|:)cycleway($|:)/.test(Object.keys(tags).join(':'))) return { color: '#e11d48', weight: 3, opacity: 0.95 };
+      if (tags.highway === 'footway')  return { color: '#8b5e3c', weight: 3, opacity: 0.9, dashArray: '6,4' };
+      if (tags.highway === 'path')     return { color: '#7c3aed', weight: 3, opacity: 0.9, dashArray: '8,4' };
+
+      // Voies bus
+      if (tags.highway === 'busway' || 'busway' in tags || Object.keys(tags).some(k => k.startsWith('bus:lanes'))) return { color: '#f59e0b', weight: 4, opacity: 0.95 };
 
       // Cours d'eau
-      if (tags.waterway === 'river')   return { color: '#1d4ed8', weight: 4, opacity: 0.9 }; // bleu foncé
-      if (tags.waterway === 'canal')   return { color: '#0ea5e9', weight: 4, opacity: 0.9 }; // bleu clair
+      if (tags.waterway === 'river')   return { color: '#1d4ed8', weight: 4, opacity: 0.9 };
+      if (tags.waterway === 'canal')   return { color: '#0ea5e9', weight: 4, opacity: 0.9 };
       if (tags.waterway === 'stream')  return { color: '#60a5fa', weight: 3, opacity: 0.9 };
-      if (tags.waterway === 'drain')   return { color: '#38bdf8', weight: 2, opacity: 0.9, dashArray: '4,3' };
-      if (tags.waterway === 'ditch')   return { color: '#93c5fd', weight: 2, opacity: 0.9, dashArray: '4,3' };
+      if (tags.waterway === 'drain')   return { color: '#38bdf8', weight: 2.5, opacity: 0.9, dashArray: '4,3' };
+      if (tags.waterway === 'ditch')   return { color: '#93c5fd', weight: 2.5, opacity: 0.9, dashArray: '4,3' };
+      if (['weir','lock_gate','sluice_gate'].includes(tags.waterway)) return { color: '#22d3ee', weight: 2.5, opacity: 0.9, dashArray: '2,4' };
 
-      // Parcs (polygones tracés en contours)
-      if (tags.leisure === 'park')     return { color: '#16a34a', weight: 2, opacity: 0.8 };
+      // Surfaces d'eau / zones humides / parcs
+      if (tags.natural === 'water' || tags.water || tags.landuse === 'reservoir' || tags.natural === 'wetland' || tags.waterway === 'riverbank') {
+        return { color: '#38bdf8', weight: 2, opacity: 0.8, fill: true, fillColor: '#93c5fd', fillOpacity: 0.35 };
+      }
+      if (tags.leisure === 'park')     return { color: '#16a34a', weight: 2, opacity: 0.8, fill: true, fillColor: '#86efac', fillOpacity: 0.25 };
+
+      // Rail / Aerialway / Transports
+      if (tags.railway)   return { color: '#6b7280', weight: 3, opacity: 0.9, dashArray: '6,3' };
+      if (tags.aerialway) return { color: '#fb7185', weight: 3, opacity: 0.9, dashArray: '4,4' };
 
       return { color: '#555', weight: 2, opacity: 0.8 };
     }
 
-    // Parsing de la requête "topics in city"
+    // Parsing "topics in city"
     function parseQuery(q) {
       const lower = q.toLowerCase().trim();
-      const inMatch = lower.match(/(.+?)\s+in\s+(.+)$/i);
-      if (!inMatch) throw new Error('Format attendu: "sujets in ville" (ex: cycleway and river in Toulouse)');
-      const topicPart = inMatch[1].trim();
-      const cityPart  = inMatch[2].trim();
+      const m = lower.match(/(.+?)\s+in\s+(.+)$/i);
+      if (!m) throw new Error('Format attendu: "sujets in ville" (ex: cycleway et réseaux d\'eau in Toulouse)');
+      const topicRaw = m[1];
+      const city = m[2].trim();
+      if (!city) throw new Error('La ville est requise.');
 
-      const words = topicPart
-        .replace(/\s+(?:and|et)\s+/gi, ',')
-        .split(/[,\+;]|(\s+)/g)
-        .map(w => (w || '').trim())
-        .filter(w => !!w && w !== '+');
+      const normalized = preprocessTopics(topicRaw);
+      const words = normalized.split(/[,\s;+/]+/).map(w => w.trim()).filter(Boolean);
 
-      const nodeFilters = [];
-      const wayFilters  = [];
+      const nodeFilters = new Set();
+      const wayFilters  = new Set();
+      const relFilters  = new Set();
 
       words.forEach(w => {
         const defs = topics[w];
-        if (defs) {
-          defs.forEach(d => (d.type === 'node' ? nodeFilters : wayFilters).push(d.filter));
-        }
+        if (defs) defs.forEach(d => {
+          if (d.type === 'node') nodeFilters.add(d.filter);
+          else if (d.type === 'way') wayFilters.add(d.filter);
+          else if (d.type === 'relation') relFilters.add(d.filter);
+        });
       });
 
-      if (nodeFilters.length === 0 && wayFilters.length === 0) {
-        throw new Error(`Aucun sujet reconnu dans "${topicPart}".`);
+      if (nodeFilters.size === 0 && wayFilters.size === 0 && relFilters.size === 0) {
+        throw new Error(`Aucun sujet reconnu dans "${topicRaw}".`);
       }
-
-      return { nodeFilters, wayFilters, city: cityPart };
+      return {
+        nodeFilters: Array.from(nodeFilters),
+        wayFilters: Array.from(wayFilters),
+        relFilters: Array.from(relFilters),
+        city
+      };
     }
 
     function clearLayers() {
@@ -258,7 +369,12 @@
       featureLayers = [];
     }
 
-    // Recherche
+    function isClosedPolygon(geom) {
+      if (!geom || geom.length < 4) return false;
+      const a = geom[0], b = geom[geom.length - 1];
+      return Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
+    }
+
     async function handleSearch() {
       errorDisplay.classList.add('hidden');
       clearLayers();
@@ -266,7 +382,7 @@
       resultsCounter.classList.add('hidden');
 
       try {
-        const { nodeFilters, wayFilters, city } = parseQuery(searchInput.value);
+        const { nodeFilters, wayFilters, relFilters, city } = parseQuery(searchInput.value);
 
         // Géocodage
         const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}&limit=1&addressdetails=1`;
@@ -280,12 +396,13 @@
         const bbox = `${south},${west},${north},${east}`;
         map.setView([parseFloat(place.lat), parseFloat(place.lon)], 12);
 
-        // Construction de la requête Overpass (évite les sections vides)
+        // Construire la requête Overpass (éviter les sections vides)
         const parts = [];
         if (nodeFilters.length > 0) parts.push(nodeFilters.map(f => `node${f}(${bbox});`).join('\n  '));
         if (wayFilters.length > 0)  parts.push(wayFilters.map(f => `way${f}(${bbox});`).join('\n  '));
+        if (relFilters.length > 0)  parts.push(relFilters.map(f => `relation${f}(${bbox});`).join('\n  '));
 
-        const overpassQuery = `[out:json][timeout:60];
+        const overpassQuery = `[out:json][timeout:120];
 (
   ${parts.join('\n  ')}
 );
@@ -295,7 +412,7 @@ out geom;`;
         const opRes = await fetch(opUrl, { method: 'POST', body: `data=${encodeURIComponent(overpassQuery)}` });
         if (!opRes.ok) {
           const body = await opRes.text();
-          throw new Error(`Erreur API Overpass: ${opRes.statusText}. ${body.substring(0, 180)}`);
+          throw new Error(`Erreur API Overpass: ${opRes.statusText}. ${body.substring(0, 200)}`);
         }
 
         const data = await opRes.json();
@@ -315,9 +432,17 @@ out geom;`;
 
           if (el.type === 'node' && el.lat && el.lon) {
             layer = L.marker([el.lat, el.lon], { icon: getIconForFeature(tags) }).addTo(map);
-          } else if (el.type === 'way' && el.geometry && el.geometry.length > 1) {
+          } else if ((el.type === 'way' || el.type === 'relation') && el.geometry && el.geometry.length > 1) {
             const latLngs = el.geometry.map(pt => [pt.lat, pt.lon]);
-            layer = L.polyline(latLngs, getStyleForFeature(tags)).addTo(map);
+
+            // Polygones fermés (eau, parcs)
+            if (isClosedPolygon(el.geometry) && (tags.natural === 'water' || tags.landuse === 'reservoir' || tags.natural === 'wetland' || tags.leisure === 'park' || tags.waterway === 'riverbank')) {
+              const style = getStyleForFeature(tags);
+              layer = L.polygon(latLngs, { ...style }).addTo(map);
+            } else {
+              const style = getStyleForFeature(tags);
+              layer = L.polyline(latLngs, style).addTo(map);
+            }
           }
 
           if (layer) {
@@ -331,7 +456,6 @@ out geom;`;
           resultsCounter.classList.remove('hidden');
         }
 
-        // UI
         searchPanel.classList.add('hidden');
         newSearchButton.classList.remove('hidden');
 
@@ -344,18 +468,16 @@ out geom;`;
     }
 
     // Écouteurs
-    searchButton.addEventListener('click', handleSearch);
-    searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(); });
-
-    fitButton.addEventListener('click', () => {
+    document.getElementById('searchButton').addEventListener('click', handleSearch);
+    document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(); });
+    document.getElementById('fitButton').addEventListener('click', () => {
       if (featureLayers.length === 0) return;
       const group = L.featureGroup(featureLayers);
       map.fitBounds(group.getBounds().pad(0.1));
     });
-
-    newSearchButton.addEventListener('click', () => {
-      searchPanel.classList.remove('hidden');
-      newSearchButton.classList.add('hidden');
+    document.getElementById('newSearchButton').addEventListener('click', () => {
+      document.querySelector('.search-panel').classList.remove('hidden');
+      document.getElementById('newSearchButton').classList.add('hidden');
       clearLayers();
       resultsCounter.classList.add('hidden');
       errorDisplay.classList.add('hidden');
