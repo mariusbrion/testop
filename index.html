@@ -576,7 +576,7 @@ out geom;`;
       }
     }
 
-    // ---- Analyse des GAPS entre réseaux cyclables (avec échantillonnage) ----
+    // ---- Analyse des GAPS entre réseaux cyclables (avec échantillonnage + appariement minimal unique) ----
 
     function toRad(x) { return x * Math.PI / 180; }
     function haversine(a, b) {
@@ -617,6 +617,101 @@ out geom;`;
         points.push({ lat, lon });
       }
       return points;
+    }
+
+    // -------- Helpers pour appariement optimal minimal (glouton unique) --------
+
+    // Sélection d'extrémités ou fallback d'échantillons si anneau/boucle
+    function pickComponentEndpoints(componentSet, graph, nodeCoord, cap = 40, fallbackSample = 16) {
+      const endpoints = [];
+      componentSet.forEach(id => {
+        const deg = graph.get(id)?.size || 0;
+        if (deg === 1) {
+          const c = nodeCoord.get(id);
+          if (c) endpoints.push({ id, lat: c.lat, lon: c.lon });
+        }
+      });
+
+      if (endpoints.length > 0) {
+        if (endpoints.length <= cap) return endpoints;
+        const step = Math.ceil(endpoints.length / cap);
+        const reduced = [];
+        for (let i = 0; i < endpoints.length; i += step) reduced.push(endpoints[i]);
+        return reduced;
+      }
+
+      // Fallback: pas d'extrémités -> points répartis
+      const nodes = Array.from(componentSet);
+      const res = [];
+      if (nodes.length <= fallbackSample) {
+        nodes.forEach(id => {
+          const c = nodeCoord.get(id);
+          if (c) res.push({ id, lat: c.lat, lon: c.lon });
+        });
+      } else {
+        const step = Math.ceil(nodes.length / fallbackSample);
+        for (let i = 0; i < nodes.length; i += step) {
+          const id = nodes[i];
+          const c = nodeCoord.get(id);
+          if (c) res.push({ id, lat: c.lat, lon: c.lon });
+        }
+      }
+      return res;
+    }
+
+    // Index grille pour voisinage
+    function buildGrid(points, dLat, dLon) {
+      const grid = new Map();
+      function keyFor(lat, lon) {
+        const x = Math.floor(lon / dLon);
+        const y = Math.floor(lat / dLat);
+        return `${x},${y}`;
+      }
+      points.forEach((p, i) => {
+        const key = keyFor(p.lat, p.lon);
+        if (!grid.has(key)) grid.set(key, []);
+        grid.get(key).push(i);
+      });
+      return { grid, keyFor };
+    }
+
+    // Appariement glouton minimal unique entre ensembles A et B
+    function greedyNearestUniquePairs(A, B, joinThreshold, gapRadius, dLat, dLon, maxPairs = 2) {
+      if (A.length === 0 || B.length === 0) return [];
+      const { grid } = buildGrid(B, dLat, dLon);
+      const candidates = [];
+
+      for (let ai = 0; ai < A.length; ai++) {
+        const a = A[ai];
+        const cx = Math.floor(a.lon / dLon);
+        const cy = Math.floor(a.lat / dLat);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            const arr = grid.get(`${cx + dx},${cy + dy}`);
+            if (!arr) continue;
+            for (const bi of arr) {
+              const b = B[bi];
+              const d = haversine(a, b);
+              if (d > joinThreshold && d <= gapRadius) {
+                candidates.push({ ai, bi, d });
+              }
+            }
+          }
+        }
+      }
+
+      candidates.sort((x, y) => x.d - y.d);
+      const usedA = new Set();
+      const usedB = new Set();
+      const pairs = [];
+      for (const c of candidates) {
+        if (pairs.length >= maxPairs) break;
+        if (usedA.has(c.ai) || usedB.has(c.bi)) continue;
+        usedA.add(c.ai);
+        usedB.add(c.bi);
+        pairs.push(c);
+      }
+      return pairs;
     }
 
     async function runNetworkGapsAnalysis() {
@@ -759,67 +854,74 @@ out geom;`;
         }
       }
 
-      // 5) Index de tous les points pour la recherche de gaps inter-composantes
-      setAnalysisProgress(64, 'Indexation pour les gaps…');
+      // 5) Préparer idToComp et nodesWithComp
+      setAnalysisProgress(64, 'Préparation des réseaux…');
       const idToComp = new Map();
       components.forEach((comp, cid) => comp.forEach(n => idToComp.set(n, cid)));
       const nodesWithComp = allNodes.map(n => ({ ...n, compId: idToComp.get(n.id) }));
 
+      // 6) Extraction des extrémités par composante (fallback sur échantillons)
+      setAnalysisProgress(68, 'Extraction des extrémités…');
+      const compEndpoints = components.map(comp => pickComponentEndpoints(comp, graph, nodeCoord, 40, 16));
+
+      // Pour afficher, map id -> index dans nodesWithComp
+      const idToIndex = new Map();
+      nodesWithComp.forEach((n, i) => idToIndex.set(n.id, i));
+
+      // 7) Appariement glouton minimal unique par paire de composantes
+      setAnalysisProgress(75, 'Recherche des gaps inter-réseaux…');
+      const totalPairs = (components.length * (components.length - 1)) / 2;
+      let pairCount = 0;
+      const maxPairsPerCompPair = 2;
+
       const degLatGap = gapRadius / 111320;
       const degLonGap = gapRadius / (111320 * Math.cos(centerLat * Math.PI / 180));
-      const gridGap = new Map();
-      for (let i = 0; i < nodesWithComp.length; i++) {
-        const n = nodesWithComp[i];
-        const key = cellKey(n.lat, n.lon, degLatGap, degLonGap);
-        if (!gridGap.has(key)) gridGap.set(key, []);
-        gridGap.get(key).push(i);
-      }
 
-      // 6) Chercher, pour chaque paire de composantes, le couple de points le plus proche dans [joinThreshold, gapRadius]
-      setAnalysisProgress(75, 'Recherche des gaps inter-réseaux…');
-      const bestPairByComps = new Map(); // "a|b" -> {i,j,d}
-      for (let i = 0; i < nodesWithComp.length; i++) {
-        const p = nodesWithComp[i];
-        const cx = Math.floor(p.lon / degLonGap), cy = Math.floor(p.lat / degLatGap);
-        for (let dx = -1; dx <= 1; dx++) {
-          for (let dy = -1; dy <= 1; dy++) {
-            const arr = gridGap.get(`${cx+dx},${cy+dy}`);
-            if (!arr) continue;
-            for (const j of arr) {
-              if (j === i) continue;
-              const q = nodesWithComp[j];
-              if (q.compId === p.compId) continue;
-              const d = haversine(p, q);
-              if (d > joinThreshold && d <= gapRadius) {
-                const a = Math.min(p.compId, q.compId);
-                const b = Math.max(p.compId, q.compId);
-                const key = `${a}|${b}`;
-                const prev = bestPairByComps.get(key);
-                if (!prev || d < prev.d) bestPairByComps.set(key, { i, j, d });
-              }
+      const suggestions = []; // {i, j, d}
+
+      for (let a = 0; a < components.length; a++) {
+        for (let b = a + 1; b < components.length; b++) {
+          const A = compEndpoints[a];
+          const B = compEndpoints[b];
+          if (!A || !B || A.length === 0 || B.length === 0) {
+            pairCount++;
+            continue;
+          }
+
+          const pairs = greedyNearestUniquePairs(A, B, joinThreshold, gapRadius, degLatGap, degLonGap, maxPairsPerCompPair);
+
+          for (const p of pairs) {
+            const aNode = A[p.ai], bNode = B[p.bi];
+            const i = idToIndex.get(aNode.id);
+            const j = idToIndex.get(bNode.id);
+            if (i != null && j != null) {
+              suggestions.push({ i, j, d: p.d });
             }
           }
-        }
-        if ((i % 4000) === 0) {
-          setAnalysisProgress(75 + Math.floor(20 * i / Math.max(1, nodesWithComp.length)), `Recherche gaps… ${i}/${nodesWithComp.length}`);
-          await new Promise(r => setTimeout(r, 0));
+
+          pairCount++;
+          if ((pairCount % 10) === 0) {
+            const pct = 75 + Math.floor(20 * pairCount / Math.max(1, totalPairs));
+            setAnalysisProgress(pct, `Gaps… ${pairCount}/${totalPairs}`);
+            await new Promise(r => setTimeout(r, 0));
+          }
         }
       }
 
-      // 7) Affichage des gaps
+      // 8) Affichage des gaps (minimal et sans doublons)
       setAnalysisProgress(97, 'Affichage des gaps…');
       suggestionLines.forEach(l => map.removeLayer(l));
       suggestionLines = [];
       gapMarkers.forEach(m => map.removeLayer(m));
       gapMarkers = [];
 
-      const suggestions = Array.from(bestPairByComps.values()).sort((a, b) => a.d - b.d);
+      suggestions.sort((a, b) => a.d - b.d);
       suggestions.forEach(s => {
         const P = nodesWithComp[s.i], Q = nodesWithComp[s.j];
         const line = L.polyline([[P.lat, P.lon], [Q.lat, Q.lon]], {
           color: '#111827', weight: 2.5, opacity: 0.9, dashArray: '6,6'
         }).addTo(map);
-        const mid = { lat: (P.lat + Q.lat)/2, lon: (P.lon + Q.lon)/2 };
+        const mid = { lat: (P.lat + Q.lat) / 2, lon: (P.lon + Q.lon) / 2 };
         const m = L.circleMarker([mid.lat, mid.lon], {
           radius: 6, color: '#111827', weight: 2, fillColor: '#fcd34d', fillOpacity: 0.95
         }).addTo(map);
@@ -833,9 +935,9 @@ out geom;`;
       zoomGaps.disabled = suggestions.length === 0;
 
       if (components.length <= 1) {
-        setAnalysisProgress(100, `Un seul réseau détecté ✔️ — points: ${allNodes.length.toLocaleString('fr-FR')}`);
+        setAnalysisProgress(100, `Un seul réseau détecté ✔️`);
       } else {
-        setAnalysisProgress(100, `${components.length} réseaux — ${suggestions.length} gaps — points: ${allNodes.length.toLocaleString('fr-FR')}`);
+        setAnalysisProgress(100, `${components.length} réseaux — ${suggestions.length} gaps suggérés`);
       }
     }
 
