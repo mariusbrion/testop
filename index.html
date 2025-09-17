@@ -113,7 +113,7 @@
         <span class="text-sm text-gray-600">éléments</span>
       </div>
       <button id="fitButton"
-              class="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2 text-sm uppercase tracking-wide">
+              class="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all durée-200 flex items-center justify-center gap-2 text-sm uppercase tracking-wide">
         📐 Ajuster aux éléments
       </button>
     </div>
@@ -228,20 +228,24 @@
         { type: 'relation', filter: '["leisure"="park"]["type"="multipolygon"]' }
       ],
 
-      // Cycleways (élargi)
+      // Cycleways (élargi + routes avec cycleway=*)
       cycleway: [
         { type: 'way', filter: '["highway"="cycleway"]' },
         { type: 'way', filter: '[~"^cycleway"~"."]' },
         { type: 'way', filter: '["bicycle_road"="yes"]' },
         { type: 'way', filter: '["highway"="path"]["bicycle"~"^(designated|official)$"]' },
-        { type: 'way', filter: '["highway"="footway"]["bicycle"~"^(designated|official)$"]' }
+        { type: 'way', filter: '["highway"="footway"]["bicycle"~"^(designated|official)$"]' },
+        // NOUVEAU: routes routières avec cycleway=*
+        { type: 'way', filter: '["highway"~"^(trunk|primary|secondary|tertiary|residential|unclassified|service|living_street|primary_link|secondary_link|tertiary_link)$"][~"^cycleway"~"."]' },
+        // Optionnel: routes + bicycle=designated/offical
+        { type: 'way', filter: '["highway"~"^(trunk|primary|secondary|tertiary|residential|unclassified|service|living_street|primary_link|secondary_link|tertiary_link)$"]["bicycle"~"^(designated|official)$"]' }
       ],
       footway:    [{ type: 'way',  filter: '["highway"="footway"]' }],
       sidewalk:   [{ type: 'way',  filter: '["highway"="footway"]["footway"="sidewalk"]' }],
       path:       [{ type: 'way',  filter: '["highway"="path"]' }],
       pathway:    [{ type: 'way',  filter: '["highway"="path"]' }],
 
-      // Bus lanes (voies/couloirs bus) — pas d'arrêts bus ici
+      // Bus lanes (voies/couloirs bus)
       bus_lanes: [
         { type: 'way', filter: '["highway"="busway"]' },
         { type: 'way', filter: '[~"^busway(:|$)"~"."]' },
@@ -401,7 +405,7 @@
       if (tags.leisure === 'park')     return { color: '#16a34a', weight: 2, opacity: 0.8, fill: true, fillColor: '#86efac', fillOpacity: 0.25 };
       if (tags.railway)   return { color: '#6b7280', weight: 3, opacity: 0.9, dashArray: '6,3' };
       if (tags.aerialway) return { color: '#fb7185', weight: 3, opacity: 0.9, dashArray: '4,4' };
-      if (tags.landuse === 'industrial' || tags.landuse === 'commercial' || tags.landuse === 'retail') {
+      if (['industrial','commercial','retail'].includes(tags.landuse)) {
         return { color: '#f97316', weight: 2, fill: true, fillColor: '#fdba74', fillOpacity: 0.25 };
       }
       if (tags.landuse === 'residential') {
@@ -409,6 +413,13 @@
       }
       return { color: '#555', weight: 2, opacity: 0.8 };
     }
+
+    // Helpers cyclables
+    const ROAD_HIGHWAYS = new Set(['trunk','primary','secondary','tertiary','residential','unclassified','service','living_street','primary_link','secondary_link','tertiary_link']);
+    function hasCyclewayKey(tags) {
+      return Object.keys(tags).some(k => /^cycleway/.test(k)) || typeof tags.cycleway !== 'undefined';
+    }
+    function isRoadHighway(h) { return ROAD_HIGHWAYS.has(h); }
 
     // Parsing "topics in city"
     function parseQuery(q) {
@@ -576,7 +587,7 @@ out geom;`;
       }
     }
 
-    // ---- Analyse des GAPS entre réseaux cyclables (avec échantillonnage + appariement minimal unique) ----
+    // ---- Analyse des GAPS entre réseaux cyclables (avec échantillonnage + appariement minimal + nettoyage de redondances) ----
 
     function toRad(x) { return x * Math.PI / 180; }
     function haversine(a, b) {
@@ -589,10 +600,11 @@ out geom;`;
     }
     function isCycleLike(tags) {
       return tags.highway === 'cycleway'
-        || Object.keys(tags).some(k => /^cycleway/.test(k))
+        || hasCyclewayKey(tags)
         || tags.bicycle_road === 'yes'
         || (tags.highway === 'path' && /^(designated|official)$/.test(tags.bicycle||''))
-        || (tags.highway === 'footway' && /^(designated|official)$/.test(tags.bicycle||''));
+        || (tags.highway === 'footway' && /^(designated|official)$/.test(tags.bicycle||''))
+        || (isRoadHighway(tags.highway || '') && (hasCyclewayKey(tags) || /^(designated|official|yes)$/.test(tags.bicycle||'')));
     }
     function isBusLaneLike(tags) {
       return tags.highway === 'busway' || 'busway' in tags || Object.keys(tags).some(k => k.startsWith('bus:lanes')) || tags.bus === 'designated' || tags.psv === 'designated';
@@ -620,8 +632,21 @@ out geom;`;
     }
 
     // -------- Helpers pour appariement optimal minimal (glouton unique) --------
+    function buildGrid(points, dLat, dLon) {
+      const grid = new Map();
+      function keyFor(lat, lon) {
+        const x = Math.floor(lon / dLon);
+        const y = Math.floor(lat / dLat);
+        return `${x},${y}`;
+      }
+      points.forEach((p, i) => {
+        const key = keyFor(p.lat, p.lon);
+        if (!grid.has(key)) grid.set(key, []);
+        grid.get(key).push(i);
+      });
+      return { grid, keyFor };
+    }
 
-    // Sélection d'extrémités ou fallback d'échantillons si anneau/boucle
     function pickComponentEndpoints(componentSet, graph, nodeCoord, cap = 40, fallbackSample = 16) {
       const endpoints = [];
       componentSet.forEach(id => {
@@ -659,23 +684,6 @@ out geom;`;
       return res;
     }
 
-    // Index grille pour voisinage
-    function buildGrid(points, dLat, dLon) {
-      const grid = new Map();
-      function keyFor(lat, lon) {
-        const x = Math.floor(lon / dLon);
-        const y = Math.floor(lat / dLat);
-        return `${x},${y}`;
-      }
-      points.forEach((p, i) => {
-        const key = keyFor(p.lat, p.lon);
-        if (!grid.has(key)) grid.set(key, []);
-        grid.get(key).push(i);
-      });
-      return { grid, keyFor };
-    }
-
-    // Appariement glouton minimal unique entre ensembles A et B
     function greedyNearestUniquePairs(A, B, joinThreshold, gapRadius, dLat, dLon, maxPairs = 2) {
       if (A.length === 0 || B.length === 0) return [];
       const { grid } = buildGrid(B, dLat, dLon);
@@ -877,7 +885,7 @@ out geom;`;
       const degLatGap = gapRadius / 111320;
       const degLonGap = gapRadius / (111320 * Math.cos(centerLat * Math.PI / 180));
 
-      const suggestions = []; // {i, j, d}
+      let suggestions = []; // {i, j, d}
 
       for (let a = 0; a < components.length; a++) {
         for (let b = a + 1; b < components.length; b++) {
@@ -901,12 +909,75 @@ out geom;`;
 
           pairCount++;
           if ((pairCount % 10) === 0) {
-            const pct = 75 + Math.floor(20 * pairCount / Math.max(1, totalPairs));
+            const pct = 75 + Math.floor(10 * pairCount / Math.max(1, totalPairs));
             setAnalysisProgress(pct, `Gaps… ${pairCount}/${totalPairs}`);
             await new Promise(r => setTimeout(r, 0));
           }
         }
       }
+
+      // 7.5) Nettoyage des suggestions (suppression redondances via graphe des composantes + Floyd-Warshall)
+      setAnalysisProgress(92, 'Nettoyage des suggestions…');
+      const redundancyTolerance = 8; // mètres (tolérance pour flottants/variations)
+      // Construire une matrice des distances min entre composantes à partir des suggestions (poids = distance de gap)
+      const C = components.length;
+      // Poids directs (min par paire)
+      const directEdge = Array.from({ length: C }, () => Array(C).fill(Infinity));
+      for (let u = 0; u < C; u++) directEdge[u][u] = 0;
+
+      // Remplir directEdge avec la plus petite distance par paire de composantes
+      for (const s of suggestions) {
+        const u = nodesWithComp[s.i].compId;
+        const v = nodesWithComp[s.j].compId;
+        if (u === v) continue;
+        if (s.d < directEdge[u][v]) {
+          directEdge[u][v] = s.d;
+          directEdge[v][u] = s.d;
+        }
+      }
+
+      // Floyd-Warshall
+      const distFW = directEdge.map(row => row.slice());
+      for (let k = 0; k < C; k++) {
+        for (let i = 0; i < C; i++) {
+          if (!isFinite(distFW[i][k])) continue;
+          const dik = distFW[i][k];
+          for (let j = 0; j < C; j++) {
+            const alt = dik + distFW[k][j];
+            if (alt < distFW[i][j]) distFW[i][j] = alt;
+          }
+        }
+        if ((k % 10) === 0) {
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+
+      // Filtrage: on enlève tout gap s.t. il existe un chemin plus court via d'autres gaps
+      const cleaned = [];
+      for (const s of suggestions) {
+        const u = nodesWithComp[s.i].compId;
+        const v = nodesWithComp[s.j].compId;
+        if (u === v) continue; // ignore intra-composante
+        const shortest = distFW[u][v];
+        // Si un chemin alternatif est strictement plus court (avec tolérance) => redondant
+        if (isFinite(shortest) && shortest + redundancyTolerance < s.d) {
+          continue; // on ignore ce gap redondant
+        }
+        cleaned.push(s);
+      }
+
+      // Déduplication finale: garder le meilleur gap par paire (u,v)
+      const bestByPair = new Map(); // key "u|v" -> {i,j,d}
+      for (const s of cleaned) {
+        const u = nodesWithComp[s.i].compId;
+        const v = nodesWithComp[s.j].compId;
+        if (u === v) continue;
+        const a = Math.min(u, v), b = Math.max(u, v);
+        const key = `${a}|${b}`;
+        const prev = bestByPair.get(key);
+        if (!prev || s.d < prev.d) bestByPair.set(key, s);
+      }
+      suggestions = Array.from(bestByPair.values());
 
       // 8) Affichage des gaps (minimal et sans doublons)
       setAnalysisProgress(97, 'Affichage des gaps…');
