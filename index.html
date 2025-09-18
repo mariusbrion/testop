@@ -121,7 +121,7 @@
 
   <!-- Analyse Gaps Panel -->
   <div id="analysisPanel" class="hidden absolute bottom-6 left-6 z-30">
-    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-5 border border-gray-200/50 space-y-3 min-w-[320px]">
+    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-5 border border-gray-200/50 space-y-3 min-w-[340px]">
       <div class="flex items-center gap-2">
         <span class="text-xl">🕳️</span>
         <h3 class="font-bold text-gray-800">Gaps réseau cyclable</h3>
@@ -147,6 +147,49 @@
         <label for="includeBusLanes" class="text-gray-700">Inclure les voies bus</label>
       </div>
 
+      <!-- CHANGEMENT: Bouton Paramètres avancés -->
+      <button id="advancedSettingsToggle"
+              class="w-full py-2 px-4 bg-gradient-to-r from-gray-600 to-gray-800 text-white font-semibold rounded-xl shadow hover:shadow-md transition flex items-center justify-center gap-2">
+        <i class="fa-solid fa-sliders"></i> Paramètres avancés
+      </button>
+      <!-- CHANGEMENT: Panneau Paramètres avancés -->
+      <div id="advancedPanel" class="hidden p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <label class="flex flex-col">
+            <span>Espacement candidats (m)</span>
+            <input id="advCandidateSpacing" type="number" min="20" step="10" value="120" class="mt-1 px-2 py-1 border rounded-md"/>
+          </label>
+          <label class="flex flex-col">
+            <span>Max nœuds internes</span>
+            <input id="advMaxInternalPerComp" type="number" min="10" step="5" value="60" class="mt-1 px-2 py-1 border rounded-md"/>
+          </label>
+          <label class="flex flex-col">
+            <span>Cap extrémités</span>
+            <input id="advCapEndpoints" type="number" min="10" step="5" value="80" class="mt-1 px-2 py-1 border rounded-md"/>
+          </label>
+          <label class="flex items-center gap-2">
+            <input id="advPreferJunctions" type="checkbox" class="w-4 h-4" checked>
+            <span>Privilégier les jonctions (deg ≥ 3)</span>
+          </label>
+        </div>
+        <div class="border-t border-gray-200"></div>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <label class="flex items-center gap-2">
+            <input id="advEnableFilter" type="checkbox" class="w-4 h-4" checked>
+            <span>Activer filtre utilité</span>
+          </label>
+          <label class="flex flex-col">
+            <span>Coef. minimal (0–1)</span>
+            <input id="advMinCoefficient" type="number" min="0" max="1" step="0.01" value="0.08" class="mt-1 px-2 py-1 border rounded-md"/>
+          </label>
+          <label class="flex flex-col">
+            <span>Marge min (m)</span>
+            <input id="advMinDistMargin" type="number" min="0" step="0.5" value="1.5" class="mt-1 px-2 py-1 border rounded-md"/>
+          </label>
+        </div>
+        <p class="text-xs text-gray-500">Les paramètres sont pris en compte au prochain lancement d’analyse.</p>
+      </div>
+
       <button id="startAnalysis"
               class="w-full py-2.5 px-4 bg-gradient-to-r from-rose-500 to-orange-500 text-white font-semibold rounded-xl shadow hover:shadow-md transition">
         Analyser les gaps
@@ -158,6 +201,26 @@
         <button id="clearGaps" class="flex-1 py-2 px-3 bg-gray-200 text-gray-800 rounded-lg text-sm">Effacer</button>
       </div>
       <div class="text-sm"><span class="font-semibold">Gaps trouvés:</span> <span id="gapCount">0</span></div>
+    </div>
+  </div>
+
+  <!-- CHANGEMENT: Liste dépliable des discontinuités -->
+  <div id="gapListPanel" class="hidden absolute top-6 right-6 z-30 w-80">
+    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-200/50 overflow-hidden">
+      <button id="gapListToggle" class="w-full px-4 py-3 flex items-center justify-between text-left">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">📎</span>
+          <span class="font-semibold text-gray-800">Discontinuités</span>
+          <span class="text-xs text-gray-500">(classées par coefficient)</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="gapListCount" class="text-sm bg-gray-100 px-2 py-0.5 rounded-full">0</span>
+          <i id="gapListChevron" class="fa-solid fa-chevron-down text-gray-600 transition-transform"></i>
+        </div>
+      </button>
+      <div id="gapListContent" class="hidden border-t border-gray-200 max-h-72 overflow-y-auto">
+        <!-- items -->
+      </div>
     </div>
   </div>
 
@@ -334,6 +397,8 @@
     let gapMarkers = [];
     let suggestionLines = [];
     let lastFetchedElements = [];
+    // CHANGEMENT: stockage des items de gaps (pour la liste/flyTo)
+    let gapItems = [];
 
     // DOM
     const searchInput = document.getElementById('searchInput');
@@ -359,6 +424,24 @@
     const joinThresholdInput = document.getElementById('joinThreshold');
     const gapRadiusInput = document.getElementById('gapRadius');
     const sampleResolutionInput = document.getElementById('sampleResolution');
+
+    // CHANGEMENT: DOM Paramètres avancés
+    const advancedSettingsToggle = document.getElementById('advancedSettingsToggle');
+    const advancedPanel = document.getElementById('advancedPanel');
+    const advCandidateSpacing = document.getElementById('advCandidateSpacing');
+    const advMaxInternalPerComp = document.getElementById('advMaxInternalPerComp');
+    const advCapEndpoints = document.getElementById('advCapEndpoints');
+    const advPreferJunctions = document.getElementById('advPreferJunctions');
+    const advEnableFilter = document.getElementById('advEnableFilter');
+    const advMinCoefficient = document.getElementById('advMinCoefficient');
+    const advMinDistMargin = document.getElementById('advMinDistMargin');
+
+    // CHANGEMENT: DOM liste gaps
+    const gapListPanel = document.getElementById('gapListPanel');
+    const gapListToggle = document.getElementById('gapListToggle');
+    const gapListContent = document.getElementById('gapListContent');
+    const gapListChevron = document.getElementById('gapListChevron');
+    const gapListCount = document.getElementById('gapListCount');
 
     // Icônes points
     function getIconForFeature(tags) {
@@ -468,9 +551,16 @@
       suggestionLines.forEach(l => map.removeLayer(l));
       suggestionLines = [];
       lastFetchedElements = [];
+      gapItems = []; // CHANGEMENT
       gapCount.textContent = '0';
       zoomGaps.disabled = true;
       setAnalysisProgress(0, 'En attente…');
+      // CHANGEMENT: cacher la liste
+      gapListPanel.classList.add('hidden');
+      gapListContent.classList.add('hidden');
+      gapListChevron.classList.remove('rotate-180');
+      gapListCount.textContent = '0';
+      gapListContent.innerHTML = '';
     }
 
     function isClosedPolygon(geom) {
@@ -590,7 +680,7 @@ out geom;`;
       }
     }
 
-    // ---- Analyse des GAPS (CHANGEMENT: candidats = extrémités + nœuds internes échantillonnés) ----
+    // ---- Analyse des GAPS (candidats internes + extrémités ; couleur = coefficient ; épaisseur fixe) ----
 
     function toRad(x) { return x * Math.PI / 180; }
     function haversine(a, b) {
@@ -617,9 +707,9 @@ out geom;`;
       const points = [];
       for (let k = 0; k <= segments; k++) {
         const t = k / segments;
-        const lat = start.lat + t * (end.lat - start.lat);
-        const lon = start.lon + t * (end.lon - start.lon);
-        points.push({ lat, lon });
+        theLat = start.lat + t * (end.lat - start.lat);
+        theLon = start.lon + t * (end.lon - start.lon);
+        points.push({ lat: theLat, lon: theLon });
       }
       return points;
     }
@@ -641,17 +731,13 @@ out geom;`;
     }
 
     // -------- CHANGEMENT MAJEUR: candidats internes + extrémités --------
-    // Pour chaque composante, on génère des points candidats:
-    // - Tous les nœuds d'extrémité (degré = 1), éventuellement réduits si trop nombreux.
-    // - Un échantillonnage spatial de nœuds internes (degré >= 2) via une grille,
-    //   en privilégiant les jonctions (degré >= 3), pour couvrir les boucles et structures internes.
     function findComponentConnectionPoints(componentSet, graph, nodeCoord, options) {
       const {
-        capEndpoints = 80,              // max extrémités retenues (si >, on sous-échantillonne)
-        maxInternalPerComponent = 60,   // max de nœuds internes retenus
-        candidateSpacingMeters = 120,   // espacement cible (m) pour l'échantillonnage spatial
-        centerLat = 45,                 // pour conversion mètres -> degrés
-        preferJunctions = true          // privilégier degré >= 3 dans une même cellule
+        capEndpoints = 80,
+        maxInternalPerComponent = 60,
+        candidateSpacingMeters = 120,
+        centerLat = 45,
+        preferJunctions = true
       } = options || {};
 
       const degLat = candidateSpacingMeters / 111320;
@@ -673,13 +759,11 @@ out geom;`;
           if (!prev) {
             cellBest.set(key, { id, lat: c.lat, lon: c.lon, deg });
           } else if (preferJunctions && prev.deg < 3 && deg >= 3) {
-            // remplace par une jonction si possible
             cellBest.set(key, { id, lat: c.lat, lon: c.lon, deg });
           }
         }
       });
 
-      // Sous-échantillonnage des extrémités si nécessaire
       let endpointsReduced = endpoints;
       if (endpoints.length > capEndpoints) {
         const step = Math.ceil(endpoints.length / capEndpoints);
@@ -687,7 +771,6 @@ out geom;`;
         for (let i = 0; i < endpoints.length; i += step) endpointsReduced.push(endpoints[i]);
       }
 
-      // Collecte et sous-échantillonnage des internes
       let internal = Array.from(cellBest.values());
       if (internal.length > maxInternalPerComponent) {
         const step = Math.ceil(internal.length / maxInternalPerComponent);
@@ -696,7 +779,6 @@ out geom;`;
         internal = reduced;
       }
 
-      // Fusion + dédoublonnage
       const outMap = new Map();
       [...endpointsReduced, ...internal].forEach(p => outMap.set(p.id, { id: p.id, lat: p.lat, lon: p.lon }));
       return Array.from(outMap.values());
@@ -745,7 +827,7 @@ out geom;`;
       colorStart: '#f59e0b',  // orange-500
       colorMid:   '#ef4444',  // red-500
       colorEnd:   '#7f1d1d',  // red-900
-      gapLineWeight: 4,       // épaisseur fixe (CHANGEMENT)
+      gapLineWeight: 4,       // épaisseur fixe
       gapMarkerRadius: 6,
       gapMarkerBorderWeight: 2,
       gapMarkerFillOpacity: 0.95,
@@ -753,11 +835,11 @@ out geom;`;
       lineOpacity: 0.95
     };
 
-    // Filtre optionnel pour éviter des connexions trop triviales/peu utiles
-    const GAP_FILTERS = {
+    // Valeurs par défaut du filtre
+    const DEFAULT_GAP_FILTERS = {
       enableConnectivityFilter: true,
-      minCoefficient: 0.08,           // coefficient minimal (0..1) pour afficher un gap
-      minDistanceMarginMeters: 1.5     // d > joinThreshold + marge
+      minCoefficient: 0.08,
+      minDistanceMarginMeters: 1.5
     };
 
     function hexToRgb(hex) {
@@ -771,7 +853,7 @@ out geom;`;
     function lerp(a, b, t) { return a + (b - a) * t; }
     function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
-    // Coefficient combinant longueur et importance relative des deux réseaux (CHANGEMENT)
+    // Coefficient combinant longueur et importance relative des deux réseaux
     function computeGapCoefficient(sizeA, sizeB, maxComponentSize, distance, joinThreshold, gapRadius) {
       const denom = Math.max(1, gapRadius - joinThreshold);
       const distScore = clamp01((distance - joinThreshold) / denom);
@@ -779,14 +861,13 @@ out geom;`;
       if (maxComponentSize > 0) {
         const a = clamp01(sizeA / maxComponentSize);
         const b = clamp01(sizeB / maxComponentSize);
-        // moyenne géométrique: pénalise si l'un des deux réseaux est petit
-        netScore = Math.sqrt(a * b);
+        netScore = Math.sqrt(a * b); // géométrique
       }
-      const coef = Math.sqrt(distScore * netScore); // combine les deux (géométrique)
+      const coef = Math.sqrt(distScore * netScore);
       return clamp01(coef);
     }
 
-    // Couleur depuis le coefficient (0 -> orange, 0.5 -> rouge, 1 -> rouge très foncé)
+    // Couleur depuis le coefficient
     function getGapColorFromCoeff(coef) {
       const t = clamp01(coef);
       const c1 = hexToRgb(GAP_STYLE_CONFIG.colorStart);
@@ -807,6 +888,27 @@ out geom;`;
       }
     }
 
+    // CHANGEMENT: lecture des paramètres avancés
+    function getAdvancedSettings() {
+      const enableConnectivityFilter = advEnableFilter?.checked ?? DEFAULT_GAP_FILTERS.enableConnectivityFilter;
+      const minCoefficient = parseFloat(advMinCoefficient?.value);
+      const minDistanceMarginMeters = parseFloat(advMinDistMargin?.value);
+      const candidateSpacingMeters = parseFloat(advCandidateSpacing?.value);
+      const maxInternalPerComponent = parseInt(advMaxInternalPerComp?.value, 10);
+      const capEndpoints = parseInt(advCapEndpoints?.value, 10);
+      const preferJunctions = !!advPreferJunctions?.checked;
+
+      return {
+        enableConnectivityFilter,
+        minCoefficient: isFinite(minCoefficient) ? minCoefficient : DEFAULT_GAP_FILTERS.minCoefficient,
+        minDistanceMarginMeters: isFinite(minDistanceMarginMeters) ? minDistanceMarginMeters : DEFAULT_GAP_FILTERS.minDistanceMarginMeters,
+        candidateSpacingMeters: isFinite(candidateSpacingMeters) ? candidateSpacingMeters : 120,
+        maxInternalPerComponent: Number.isInteger(maxInternalPerComponent) ? maxInternalPerComponent : 60,
+        capEndpoints: Number.isInteger(capEndpoints) ? capEndpoints : 80,
+        preferJunctions
+      };
+    }
+
     async function runNetworkGapsAnalysis() {
       if (!lastFetchedElements || lastFetchedElements.length === 0) {
         analysisStatus.textContent = "Aucun réseau chargé.";
@@ -819,9 +921,11 @@ out geom;`;
       const sampleResolution = Math.max(10, Math.min(200, Number(sampleResolutionInput?.value) || 50)); // m
       const precision = 1e7;
 
+      const adv = getAdvancedSettings(); // CHANGEMENT
+
       setAnalysisProgress(3, `Préparation…`);
 
-      // 1) Collecter les voies pertinentes (cycle + option bus lanes)
+      // 1) Collecter les voies pertinentes
       setAnalysisProgress(5, 'Collecte des tronçons cyclables…');
       const polylines = [];
       for (const el of lastFetchedElements) {
@@ -837,10 +941,10 @@ out geom;`;
         return;
       }
 
-      // 2) Construire le graphe en échantillonnant tous les segments
+      // 2) Construire le graphe
       setAnalysisProgress(12, `Construction du graphe (résolution ${sampleResolution} m)…`);
-      const graph = new Map();   // nodeId -> Set(neighborId)
-      const nodeCoord = new Map(); // nodeId -> {lat, lon}
+      const graph = new Map();
+      const nodeCoord = new Map();
       function getNodeId(lat, lon, prec) { return `${Math.round(lat * prec)}_${Math.round(lon * prec)}`; }
       function ensureNode(lat, lon) {
         const id = getNodeId(lat, lon, precision);
@@ -880,7 +984,7 @@ out geom;`;
       const allNodes = Array.from(nodeCoord.entries()).map(([id, { lat, lon }]) => ({ id, lat, lon }));
       setAnalysisProgress(30, `Noeuds générés: ${allNodes.length.toLocaleString('fr-FR')}`);
 
-      // 3) Connexions virtuelles: joindre points à ≤ joinThreshold
+      // 3) Connexions virtuelles
       setAnalysisProgress(35, 'Jointure des points proches…');
       const centerLat = map.getCenter().lat;
       const degLatJoin = joinThreshold / 111320;
@@ -926,7 +1030,7 @@ out geom;`;
       // 4) Composantes connexes
       setAnalysisProgress(52, 'Recherche des réseaux…');
       const visited = new Set();
-      const components = []; // array of Set(nodeId)
+      const components = [];
       for (let idx = 0; idx < allNodes.length; idx++) {
         const startId = allNodes[idx].id;
         if (visited.has(startId)) continue;
@@ -953,21 +1057,27 @@ out geom;`;
       components.forEach((comp, cid) => comp.forEach(n => idToComp.set(n, cid)));
       const nodesWithComp = allNodes.map(n => ({ ...n, compId: idToComp.get(n.id) }));
 
-      // -------- CHANGEMENT: extraction de CANDIDATS (extrémités + nœuds internes échantillonnés) --------
+      // 6) Candidats (extrémités + nœuds internes espacés)
       setAnalysisProgress(68, 'Extraction des candidats de connexion…');
-      const candidateSpacingMeters = Math.max(60, sampleResolution); // spacing spatial
+      const candidateSpacingMeters = Math.max(20, adv.candidateSpacingMeters ?? Math.max(60, sampleResolution));
       const compCandidates = components.map(comp =>
         findComponentConnectionPoints(
           comp, graph, nodeCoord,
-          { capEndpoints: 80, maxInternalPerComponent: 60, candidateSpacingMeters, centerLat, preferJunctions: true }
+          {
+            capEndpoints: adv.capEndpoints ?? 80,
+            maxInternalPerComponent: adv.maxInternalPerComponent ?? 60,
+            candidateSpacingMeters,
+            centerLat,
+            preferJunctions: adv.preferJunctions ?? true
+          }
         )
       );
 
-      // Pour afficher, map id -> index dans nodesWithComp
+      // Map id -> index global
       const idToIndex = new Map();
       nodesWithComp.forEach((n, i) => idToIndex.set(n.id, i));
 
-      // 6) Appariement glouton minimal unique par paire de composantes (sur les candidats)
+      // 7) Appariement glouton minimal unique par paire de composantes (sur candidats)
       setAnalysisProgress(75, 'Recherche des gaps inter-réseaux…');
       const totalPairs = (components.length * (components.length - 1)) / 2;
       let pairCount = 0;
@@ -1007,7 +1117,7 @@ out geom;`;
         }
       }
 
-      // 7) Nettoyage des suggestions (suppression redondances)
+      // 8) Nettoyage des suggestions (suppression redondances)
       setAnalysisProgress(92, 'Nettoyage des suggestions…');
       const redundancyTolerance = 8; // m
       const C = components.length;
@@ -1059,31 +1169,42 @@ out geom;`;
       }
       suggestions = Array.from(bestByPair.values());
 
-      // 8) Filtre optionnel par coefficient (éviter connexions trop triviales)
+      // 9) Filtre optionnel par coefficient (éviter connexions triviales)
       const compSizes = components.map(c => c.size || 0);
       const maxComponentSize = compSizes.length ? Math.max(...compSizes) : 0;
 
       let displaySuggestions = suggestions;
-      if (GAP_FILTERS.enableConnectivityFilter) {
+      if (adv.enableConnectivityFilter) {
         displaySuggestions = suggestions.filter(s => {
-          if (s.d <= joinThreshold + GAP_FILTERS.minDistanceMarginMeters) return false;
+          if (s.d <= joinThreshold + adv.minDistanceMarginMeters) return false;
           const P = nodesWithComp[s.i], Q = nodesWithComp[s.j];
           const sizeA = compSizes[P.compId] || 0;
           const sizeB = compSizes[Q.compId] || 0;
           const coef = computeGapCoefficient(sizeA, sizeB, maxComponentSize, s.d, joinThreshold, gapRadius);
-          return coef >= GAP_FILTERS.minCoefficient;
+          return coef >= adv.minCoefficient;
         });
       }
 
-      // 9) Affichage (couleur = coefficient ; épaisseur fixe)
+      // 10) Affichage (couleur = coefficient ; épaisseur fixe) + construction de la liste
       setAnalysisProgress(97, 'Affichage des gaps…');
       suggestionLines.forEach(l => map.removeLayer(l));
       suggestionLines = [];
       gapMarkers.forEach(m => map.removeLayer(m));
       gapMarkers = [];
+      gapItems = [];
 
-      displaySuggestions.sort((a, b) => a.d - b.d);
-      displaySuggestions.forEach(s => {
+      // Ordonner par coefficient décroissant pour la liste
+      const ordered = displaySuggestions.slice().sort((a, b) => {
+        const Pa = nodesWithComp[a.i], Qa = nodesWithComp[a.j];
+        const Sa = compSizes[Pa.compId] || 0, Sb = compSizes[Qa.compId] || 0;
+        const ca = computeGapCoefficient(Sa, Sb, maxComponentSize, a.d, joinThreshold, gapRadius);
+        const Pb = nodesWithComp[b.i], Qb = nodesWithComp[b.j];
+        const Sc = compSizes[Pb.compId] || 0, Sd = compSizes[Qb.compId] || 0;
+        const cb = computeGapCoefficient(Sc, Sd, maxComponentSize, b.d, joinThreshold, gapRadius);
+        return cb - ca;
+      });
+
+      ordered.forEach(s => {
         const P = nodesWithComp[s.i], Q = nodesWithComp[s.j];
         const compA = P.compId, compB = Q.compId;
         const sizeA = compSizes[compA] || 0;
@@ -1100,7 +1221,7 @@ out geom;`;
         }).addTo(map);
 
         const mid = { lat: (P.lat + Q.lat) / 2, lon: (P.lon + Q.lon) / 2 };
-        const m = L.circleMarker([mid.lat, mid.lon], {
+        const marker = L.circleMarker([mid.lat, mid.lon], {
           radius: GAP_STYLE_CONFIG.gapMarkerRadius,
           color: color,
           weight: GAP_STYLE_CONFIG.gapMarkerBorderWeight,
@@ -1111,26 +1232,74 @@ out geom;`;
         const popupHtml = `
           <div style="font-family: system-ui, sans-serif; line-height:1.4;">
             <b>Gap suggéré</b><br/>
+            Coefficient ≈ ${coef.toFixed(2)} (0–1)<br/>
             Distance ≈ ${Math.round(s.d)} m<br/>
-            Réseaux: #${compA} (${sizeA} nœuds) ↔ #${compB} (${sizeB} nœuds)<br/>
-            Coefficient (0–1) ≈ ${coef.toFixed(2)}
+            Réseaux: #${compA} (${sizeA} nœuds) ↔ #${compB} (${sizeB} nœuds)
           </div>
         `;
-        m.bindPopup(popupHtml);
+        marker.bindPopup(popupHtml);
         line.bindPopup(popupHtml);
 
         suggestionLines.push(line);
-        gapMarkers.push(m);
+        gapMarkers.push(marker);
+
+        gapItems.push({
+          P, Q, compA, compB, sizeA, sizeB, distance: s.d, coef, color, line, marker
+        });
       });
 
       gapCount.textContent = String(displaySuggestions.length);
       zoomGaps.disabled = displaySuggestions.length === 0;
+
+      // CHANGEMENT: afficher + remplir la liste dépliable
+      renderGapList(gapItems);
 
       if (components.length <= 1) {
         setAnalysisProgress(100, `Un seul réseau détecté ✔️`);
       } else {
         setAnalysisProgress(100, `${components.length} réseaux — ${displaySuggestions.length} gaps suggérés`);
       }
+    }
+
+    // CHANGEMENT: rendu liste gaps + flyTo
+    function renderGapList(items) {
+      if (!items || items.length === 0) {
+        gapListPanel.classList.add('hidden');
+        gapListContent.innerHTML = '';
+        gapListCount.textContent = '0';
+        return;
+      }
+      // Ordonner par coef décroissant (sécurité)
+      const ordered = items.slice().sort((a, b) => b.coef - a.coef);
+
+      gapListContent.innerHTML = ordered.map((item, idx) => {
+        return `
+          <button data-idx="${idx}"
+                  class="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-3">
+            <span class="w-3 h-3 rounded-full" style="background:${item.color}"></span>
+            <span class="font-medium text-gray-800">Coef ${item.coef.toFixed(2)}</span>
+            <span class="text-gray-500 text-sm">— ${Math.round(item.distance)} m — #${item.compA} ↔ #${item.compB}</span>
+          </button>
+        `;
+      }).join('');
+
+      // Activer le panneau et l’ouvrir
+      gapListPanel.classList.remove('hidden');
+      gapListContent.classList.remove('hidden');
+      gapListChevron.classList.add('rotate-180');
+      gapListCount.textContent = String(items.length);
+
+      // Listeners click -> flyTo
+      Array.from(gapListContent.querySelectorAll('button[data-idx]')).forEach((btn, i) => {
+        btn.addEventListener('click', () => {
+          const item = ordered[i];
+          if (!item) return;
+          const bounds = L.latLngBounds([[item.P.lat, item.P.lon], [item.Q.lat, item.Q.lon]]);
+          map.flyToBounds(bounds.pad(0.3), { maxZoom: 18, duration: 1.1 });
+          // ouvrir le popup du marqueur central après l’animation
+          setTimeout(() => item.marker.openPopup(), 1200);
+        });
+      });
     }
 
     // ---- Écouteurs ----
@@ -1152,20 +1321,40 @@ out geom;`;
     });
 
     document.getElementById('startAnalysis').addEventListener('click', runNetworkGapsAnalysis);
+
     document.getElementById('zoomGaps').addEventListener('click', () => {
       const all = [...suggestionLines, ...gapMarkers];
       if (all.length === 0) return;
       const grp = L.featureGroup(all);
       map.fitBounds(grp.getBounds().pad(0.2));
     });
+
     document.getElementById('clearGaps').addEventListener('click', () => {
       suggestionLines.forEach(l => map.removeLayer(l));
       suggestionLines = [];
       gapMarkers.forEach(m => map.removeLayer(m));
       gapMarkers = [];
+      gapItems = [];
       gapCount.textContent = '0';
       zoomGaps.disabled = true;
       setAnalysisProgress(0, 'En attente…');
+      // CHANGEMENT: vider la liste
+      gapListPanel.classList.add('hidden');
+      gapListContent.classList.add('hidden');
+      gapListChevron.classList.remove('rotate-180');
+      gapListCount.textContent = '0';
+      gapListContent.innerHTML = '';
+    });
+
+    // CHANGEMENT: toggle Paramètres avancés
+    advancedSettingsToggle.addEventListener('click', () => {
+      advancedPanel.classList.toggle('hidden');
+    });
+
+    // CHANGEMENT: toggle panneau liste
+    gapListToggle.addEventListener('click', () => {
+      const hidden = gapListContent.classList.toggle('hidden');
+      gapListChevron.classList.toggle('rotate-180', !hidden);
     });
   </script>
 </body>
