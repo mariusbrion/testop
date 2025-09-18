@@ -71,16 +71,16 @@
           <label class="block text-gray-800 text-xl font-bold">
             🔍 Que voulez-vous explorer?
           </label>
-          <!-- Dictionnaire des macros -->
+          <!-- CHANGEMENT: bouton documentation macros -->
           <button id="openMacroDocs"
                   class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/80 border border-gray-200 text-gray-700 hover:bg-white hover:shadow">
             <i class="fa-solid fa-book-open"></i> Dictionnaire des macros
           </button>
         </div>
         <input id="searchInput" type="text"
-               value="transport:bus et mobilites_douces in Lyon"
+               value="cycleway et eau in Bordeaux"
                class="w-full px-6 py-4 text-lg bg-gradient-to-r from-gray-50 to-blue-50 border-2 border-gray-300 rounded-2xl focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:border-transparent shadow-xl transition-all duration-300 placeholder-gray-500 font-medium"
-               placeholder="Ex: transport:bus in Paris, mobilites_douces and eau in Marseille, zone commerciale in Nantes"/>
+               placeholder="Ex: eau in Lyon, transport in Paris, bus lanes in Toulouse, zone commerciale in Nantes, végétation in Lille"/>
 
         <button id="searchButton"
                 class="w-full py-4 px-8 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white font-extrabold text-lg rounded-2xl shadow-2xl hover:shadow-3xl transform hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 uppercase tracking-wide">
@@ -95,22 +95,19 @@
           <p id="errorMessage" class="text-red-700 leading-relaxed whitespace-pre-wrap"></p>
         </div>
 
-        <!-- Aide -->
+        <!-- CHANGEMENT: Aide enrichie -->
         <div class="p-4 bg-blue-50/50 border border-blue-200 rounded-2xl text-sm md:text-base space-y-2">
           <p class="font-semibold text-blue-800 flex items-center gap-2">📋 Sujets supportés (combinez-les!)</p>
           <p class="text-blue-700">
-            Points: stop (arrêts bus), school, university, restaurant, cafe, bar, park, hospital, clinic, shop, atm, bank, hotel, fountain, swimming_pool
+            Points: bus, stop, school, university, college, restaurant, cafe, bar, park, hospital, clinic, shop, atm, bank, hotel, fountain, swimming_pool
           </p>
           <p class="text-blue-700">
-            Lignes/Surfaces: cycleway, footway, sidewalk, path, pedestrian, river, stream, canal, drain, ditch, wetlands, lake, pond, reservoir, basin
+            Lignes/Surfaces: cycleway, footway, sidewalk, path, river, stream, canal, drain, ditch, wetlands, lake, pond, reservoir, basin
           </p>
           <p class="text-blue-700">
-            Macros: eau, transport, résidentiel (zone résidentielle), commercial (zone commerciale), industriel, végétation, mobilites_douces
+            Macros: eau, transport, résidentiel (ou zone résidentielle), commercial (ou zone commerciale), industriel, végétation, bus lanes
           </p>
-          <p class="text-blue-700">
-            Sous-macros: transport:bus | transport:tram | transport:subway | transport:rail | transport:aerial
-          </p>
-          <p class="text-gray-600 text-xs italic">“and” ou “et” fonctionnent. Ex: transport:bus et mobilites_douces in Lyon.</p>
+          <p class="text-gray-600 text-xs italic">“and” ou “et” fonctionnent. Ex: cycleway et eau in Paris.</p>
         </div>
       </div>
     </div>
@@ -131,7 +128,7 @@
     </div>
   </div>
 
-  <!-- Analyse Gaps Panel (déjà enrichi) -->
+  <!-- Analyse Gaps Panel (avec Paramètres avancés + Liste) -->
   <div id="analysisPanel" class="hidden absolute bottom-6 left-6 z-30">
     <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-5 border border-gray-200/50 space-y-3 min-w-[340px]">
       <div class="flex items-center gap-2">
@@ -232,7 +229,7 @@
     </div>
   </div>
 
-  <!-- Modal Dictionnaire des macros -->
+  <!-- CHANGEMENT: Modal Dictionnaire des macros -->
   <div id="macroDocsModal" class="modal-overlay hidden">
     <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-[92%] p-6 md:p-8 overflow-y-auto max-h-[85vh]">
       <div class="flex items-center justify-between mb-4">
@@ -244,7 +241,7 @@
           <i class="fa-solid fa-xmark text-gray-600 text-xl"></i>
         </button>
       </div>
-      <p class="text-gray-600 mb-4">Utilisez ces libellés dans vos requêtes (ex: “transport:bus and eau in Marseille”). Chaque macro se déplie en tags OSM.</p>
+      <p class="text-gray-600 mb-4">Utilisez ces libellés dans vos requêtes (ex: “transport and eau in Marseille”). Chaque macro se déplie en multiples tags OSM.</p>
       <div id="macroDocsContent" class="space-y-6"></div>
     </div>
   </div>
@@ -263,35 +260,27 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.min.js"></script>
 
   <script>
-    // Normalisation
+    // Helpers: normalisation + remplacements FR/EN
     function normalize(str) {
       return (str || '')
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .toLowerCase();
     }
 
-    // Aliases vers macros et sous-macros
+    // CHANGEMENT: alias vers macros
     const macroAliases = {
-      // Macros principales
-      eau: 'macro_eau', water: 'macro_eau', reseaux_eau: 'macro_eau',
-      transport: 'macro_transport', reseaux_transports: 'macro_transport',
-      zone_residentielle: 'macro_residentiel', residentiel: 'macro_residentiel', residential: 'macro_residentiel',
-      zone_commerciale: 'macro_commercial', commercial: 'macro_commercial', retail: 'macro_commercial',
+      eau: 'macro_eau', water: 'macro_eau', reseaux_eau: 'macro_eau', water_networks: 'macro_eau',
+      transport: 'macro_transport', reseaux_transports: 'macro_transport', transport_networks: 'macro_transport',
+      zone_residentielle: 'macro_residentiel', residentiel: 'macro_residentiel', residential: 'macro_residentiel', residential_zone: 'macro_residentiel',
+      zone_commerciale: 'macro_commercial', commercial: 'macro_commercial', commercial_zone: 'macro_commercial',
       industriel: 'macro_industriel', industrie: 'macro_industriel', industrial: 'macro_industriel',
-      vegetation: 'macro_vegetation', vegetal: 'macro_vegetation', green: 'macro_vegetation', espaces_verts: 'macro_vegetation',
-      mobilites_douces: 'macro_mobilites', mobilites: 'macro_mobilites', modes_doux: 'macro_mobilites', soft_mobility: 'macro_mobilites', active_mobility: 'macro_mobilites',
-      // Sous-macros transport (tokens sans préfixe transport:)
-      bus: 'macro_transport:bus',
-      tram: 'macro_transport:tram',
-      subway: 'macro_transport:subway', metro: 'macro_transport:subway',
-      rail: 'macro_transport:rail', train: 'macro_transport:rail',
-      aerial: 'macro_transport:aerial', cable: 'macro_transport:aerial'
+      vegetation: 'macro_vegetation', vegetal: 'macro_vegetation', green: 'macro_vegetation', greenspace: 'macro_vegetation', espaces_verts: 'macro_vegetation'
     };
 
     function preprocessTopics(text) {
       let s = normalize(text);
       s = s.replace(/\s+(?:and|et)\s+/g, ','); // séparateur unique ,
-      // FR groupés
+      // FR groupés en tokens composés
       s = s.replace(/\breseaux?\s+d'?eaux?\b/g, 'reseaux_eau');
       s = s.replace(/\breseaux?\s+de\s+transports?\b/g, 'reseaux_transports');
       s = s.replace(/\b(voies?|bandes?|couloirs?)\s+(de\s+)?bus\b/g, 'bus_lanes');
@@ -299,7 +288,6 @@
       s = s.replace(/\bzone\s+residentielles?\b/g, 'zone_residentielle');
       s = s.replace(/\bzone\s+commerciales?\b/g, 'zone_commerciale');
       s = s.replace(/\bespaces?\s+verts?\b/g, 'espaces_verts');
-      s = s.replace(/\bmobilites?\s+douces?\b/g, 'mobilites_douces');
       // EN -> FR
       s = s.replace(/\bwater\s+networks?\b/g, 'reseaux_eau');
       s = s.replace(/\btransport\s+networks?\b/g, 'reseaux_transports');
@@ -309,10 +297,11 @@
       return s;
     }
 
-    // Sujet atomiques → définitions
+    // Sujet atomiques → définitions {type: node|way|relation, filter:'[...]'}
     const topics = {
       // Points
-      stop: [{ type: 'node', filter: '["highway"="bus_stop"]' }], // On garde 'stop' pour arrêts
+      bus:        [{ type: 'node', filter: '["highway"="bus_stop"]' }],
+      stop:       [{ type: 'node', filter: '["highway"="bus_stop"]' }],
       school:     [{ type: 'node', filter: '["amenity"="school"]' }],
       university: [{ type: 'node', filter: '["amenity"="university"]' }],
       college:    [{ type: 'node', filter: '["amenity"="college"]' }],
@@ -321,19 +310,20 @@
       bar:        [{ type: 'node', filter: '["amenity"="bar"]' }],
       hospital:   [{ type: 'node', filter: '["amenity"="hospital"]' }],
       clinic:     [{ type: 'node', filter: '["amenity"="clinic"]' }],
-      shop:       [{ type: 'node', filter: '[shop]' }, { type:'way', filter:'[shop]' }],
+      shop:       [{ type: 'node', filter: '[shop]' }, { type: 'way', filter: '[shop]' }],
       atm:        [{ type: 'node', filter: '["amenity"="atm"]' }],
       bank:       [{ type: 'node', filter: '["amenity"="bank"]' }],
       hotel:      [{ type: 'node', filter: '["tourism"="hotel"]' }],
-      fountain:   [{ type: 'node', filter: '["amenity"="fountain"]' }, { type:'way', filter:'["amenity"="fountain"]' }],
+      fountain:   [{ type: 'node', filter: '["amenity"="fountain"]' }, { type: 'way', filter: '["amenity"="fountain"]' }],
       swimming_pool: [
-        { type:'node', filter:'["leisure"="swimming_pool"]' },
-        { type:'way', filter:'["leisure"="swimming_pool"]' },
-        { type:'relation', filter:'["leisure"="swimming_pool"]' },
+        { type: 'node', filter: '["leisure"="swimming_pool"]' },
+        { type: 'way', filter: '["leisure"="swimming_pool"]' },
+        { type: 'relation', filter: '["leisure"="swimming_pool"]' },
       ],
+      // Parcs
       park: [
-        { type:'way', filter:'["leisure"="park"]' },
-        { type:'relation', filter:'["leisure"="park"]' }
+        { type: 'way',      filter: '["leisure"="park"]' },
+        { type: 'relation', filter: '["leisure"="park"]' }
       ],
       // Cycleways
       cycleway: [
@@ -345,49 +335,52 @@
         { type: 'way', filter: '["highway"~"^(trunk|primary|secondary|tertiary|residential|unclassified|service|living_street|primary_link|secondary_link|tertiary_link)$"][~"^cycleway"~"."]' },
         { type: 'way', filter: '["highway"~"^(trunk|primary|secondary|tertiary|residential|unclassified|service|living_street|primary_link|secondary_link|tertiary_link)$"]["bicycle"~"^(designated|official)$"]' }
       ],
-      footway:    [{ type: 'way', filter:'["highway"="footway"]' }],
-      sidewalk:   [{ type: 'way', filter:'["highway"="footway"]["footway"="sidewalk"]' }],
-      path:       [{ type: 'way', filter:'["highway"="path"]' }],
-      pedestrian: [{ type: 'way', filter:'["highway"="pedestrian"]' }],
-      // Bus lanes dédiées (lignes)
+      footway:    [{ type: 'way',  filter: '["highway"="footway"]' }],
+      sidewalk:   [{ type: 'way',  filter: '["highway"="footway"]["footway"="sidewalk"]' }],
+      path:       [{ type: 'way',  filter: '["highway"="path"]' }],
+      pathway:    [{ type: 'way',  filter: '["highway"="path"]' }],
+
+      // Bus lanes (inclut voies dédiées)
       bus_lanes: [
         { type: 'way', filter: '["highway"="busway"]' },
         { type: 'way', filter: '[~"^busway(:|$)"~"."]' },
         { type: 'way', filter: '[~"^bus:lanes"~"."]' },
         { type: 'way', filter: '["psv"="designated"]' },
         { type: 'way', filter: '["bus"="designated"]' },
+        { type: 'way', filter: '["access"="no"]["psv"="yes"]' },
         { type: 'way', filter: '["access"="no"]["bus"="yes"]' }
       ],
-      // Eau atomique
-      river:  [{ type:'way', filter:'["waterway"="river"]' }],
-      stream: [{ type:'way', filter:'["waterway"="stream"]' }],
-      canal:  [{ type:'way', filter:'["waterway"="canal"]' }],
-      drain:  [{ type:'way', filter:'["waterway"="drain"]' }],
-      ditch:  [{ type:'way', filter:'["waterway"="ditch"]' }],
-      wetlands:[{ type:'way', filter:'["natural"="wetland"]' }, { type:'relation', filter:'["natural"="wetland"]' }],
+
+      // Cours d’eau individuels (atomiques)
+      river:  [{ type: 'way', filter: '["waterway"="river"]' }],
+      stream: [{ type: 'way', filter: '["waterway"="stream"]' }],
+      canal:  [{ type: 'way', filter: '["waterway"="canal"]' }],
+      drain:  [{ type: 'way', filter: '["waterway"="drain"]' }],
+      ditch:  [{ type: 'way', filter: '["waterway"="ditch"]' }],
+      wetlands:[{ type: 'way', filter: '["natural"="wetland"]' }, { type: 'relation', filter: '["natural"="wetland"]' }],
       lake: [
-        { type:'way', filter:'["natural"="water"]["water"="lake"]' },
-        { type:'relation', filter:'["natural"="water"]["water"="lake"]' }
+        { type: 'way', filter: '["natural"="water"]["water"="lake"]' },
+        { type: 'relation', filter: '["natural"="water"]["water"="lake"]' }
       ],
       pond: [
-        { type:'way', filter:'["natural"="water"]["water"="pond"]' },
-        { type:'relation', filter:'["natural"="water"]["water"="pond"]' }
+        { type: 'way', filter: '["natural"="water"]["water"="pond"]' },
+        { type: 'relation', filter: '["natural"="water"]["water"="pond"]' }
       ],
       reservoir: [
-        { type:'way', filter:'["natural"="water"]["water"="reservoir"]' },
-        { type:'relation', filter:'["natural"="water"]["water"="reservoir"]' },
-        { type:'way', filter:'["landuse"="reservoir"]' },
-        { type:'relation', filter:'["landuse"="reservoir"]' }
+        { type: 'way', filter: '["natural"="water"]["water"="reservoir"]' },
+        { type: 'relation', filter: '["natural"="water"]["water"="reservoir"]' },
+        { type: 'way', filter: '["landuse"="reservoir"]' },
+        { type: 'relation', filter: '["landuse"="reservoir"]' }
       ],
       basin: [
-        { type:'way', filter:'["natural"="water"]["water"="basin"]' },
-        { type:'relation', filter:'["natural"="water"]["water"="basin"]' },
-        { type:'way', filter:'["landuse"="basin"]' },
-        { type:'relation', filter:'["landuse"="basin"]' }
+        { type: 'way', filter: '["natural"="water"]["water"="basin"]' },
+        { type: 'relation', filter: '["natural"="water"]["water"="basin"]' },
+        { type: 'way', filter: '["landuse"="basin"]' },
+        { type: 'relation', filter: '["landuse"="basin"]' }
       ]
     };
 
-    // Macros + sous-macros
+    // CHANGEMENT: Macros thématiques (hiérarchiques)
     const macros = {
       macro_eau: {
         title: 'Eau',
@@ -410,7 +403,7 @@
           { types:['way'], filter:'["natural"="coastline"]' }
         ],
         doc: [
-          'natural=water|wetland',
+          'natural=water, wetland',
           'waterway=river|stream|canal|drain|ditch|riverbank',
           'landuse=reservoir|basin',
           'amenity=fountain, leisure=swimming_pool',
@@ -419,76 +412,25 @@
       },
       macro_transport: {
         title:'Transport',
-        selectors:[ // macro générale
-          { types:['way'], filter:'["railway"~"^(rail|tram|light_rail|subway|narrow_gauge)$"]' },
+        selectors:[
+          { types:['way'], filter:'["railway"~"^(rail|tram|light_rail|subway|narrow_gauge|monorail|funicular)$"]' },
           { types:['way'], filter:'[~"^aerialway"~"."]' },
           { types:['way'], filter:'["highway"="busway"]' },
           { types:['way'], filter:'[~"^busway(:|$)"~"."]' },
-          { types:['way'], filter:'[~"^bus:lanes"~"."]' }
+          { types:['way'], filter:'[~"^bus:lanes"~"."]' },
+          { types:['way'], filter:'["psv"="designated"]' },
+          { types:['way'], filter:'["bus"="designated"]' },
+          { types:['way'], filter:'["access"="no"]["bus"="yes"]' },
+          { types:['node'], filter:'["highway"="bus_stop"]' },
+          { types:['node','way','relation'], filter:'["public_transport"~"^(platform|stop_position)$"]' },
+          { types:['relation'], filter:'["type"="route"]["route"~"^(bus|tram|light_rail|subway|train)$"]' }
         ],
-        subs: {
-          bus: {
-            title: 'Transport — Bus (lignes)',
-            selectors: [
-              { types:['relation'], filter:'["type"="route"]["route"="bus"]' }, // lignes
-              { types:['way'], filter:'["highway"="busway"]' },
-              { types:['way'], filter:'[~"^busway(:|$)"~"."]' },
-              { types:['way'], filter:'[~"^bus:lanes"~"."]' },
-              { types:['way'], filter:'["psv"="designated"]' },
-              { types:['way'], filter:'["bus"="designated"]' },
-              { types:['way'], filter:'["access"="no"]["bus"="yes"]' }
-            ],
-            doc: [
-              'relations type=route, route=bus',
-              'highway=busway, busway:*, bus:lanes=*, psv=designated'
-            ]
-          },
-          tram: {
-            title: 'Transport — Tram',
-            selectors: [
-              { types:['way'], filter:'["railway"="tram"]' },
-              { types:['relation'], filter:'["type"="route"]["route"="tram"]' }
-            ],
-            doc: ['railway=tram', 'relations route=tram']
-          },
-          subway: {
-            title: 'Transport — Métro',
-            selectors: [
-              { types:['way'], filter:'["railway"="subway"]' },
-              { types:['relation'], filter:'["type"="route"]["route"="subway"]' }
-            ],
-            doc: ['railway=subway', 'relations route=subway']
-          },
-          rail: {
-            title: 'Transport — Rail',
-            selectors: [
-              { types:['way'], filter:'["railway"~"^(rail|light_rail|narrow_gauge)$"]' },
-              { types:['relation'], filter:'["type"="route"]["route"~"^(train|rail|light_rail)$"]' }
-            ],
-            doc: ['railway=rail|light_rail|narrow_gauge', 'relations route=train|rail|light_rail']
-          },
-          aerial: {
-            title: 'Transport — Aérien',
-            selectors: [
-              { types:['way'], filter:'[~"^aerialway"~"."]' },
-              { types:['relation'], filter:'["type"="route"]["route"~"^(cable_car|gondola|chair_lift)$"]' }
-            ],
-            doc: ['aerialway=*', 'relations route=cable_car|gondola|chair_lift']
-          },
-          stops: {
-            title: 'Transport — Arrêts',
-            selectors: [
-              { types:['node'], filter:'["highway"="bus_stop"]' },
-              { types:['node','way','relation'], filter:'["public_transport"~"^(platform|stop_position)$"]' }
-            ],
-            doc: ['highway=bus_stop', 'public_transport=platform|stop_position']
-          }
-        },
         doc:[
           'railway=rail|tram|light_rail|subway…',
           'aerialway=*',
           'highway=busway, busway:*, bus:lanes=*',
-          'Sous-macros: bus | tram | subway | rail | aerial | stops'
+          'public_transport=platform|stop_position, highway=bus_stop',
+          'relations route=bus|tram|light_rail|subway|train'
         ]
       },
       macro_residentiel: {
@@ -517,9 +459,12 @@
           { types:['node','way'], filter:'[office]' }
         ],
         doc:[
-          'landuse=commercial|retail, shop=*',
-          'amenity=marketplace|restaurant|fast_food|cafe|bar|pub|bank|atm|fuel…',
-          'building=commercial|retail|supermarket|mall, office=*'
+          'landuse=commercial|retail',
+          'shop=*',
+          'amenity=marketplace|restaurant|fast_food|cafe|bar|pub…',
+          'amenity=bank|atm|fuel',
+          'building=commercial|retail|supermarket|mall',
+          'office=*'
         ]
       },
       macro_industriel: {
@@ -533,8 +478,10 @@
         ],
         doc:[
           'landuse=industrial',
-          'man_made=works, industrial=*',
-          'building=industrial|warehouse|factory, power=plant'
+          'man_made=works',
+          'industrial=*',
+          'building=industrial|warehouse|factory',
+          'power=plant'
         ]
       },
       macro_vegetation: {
@@ -549,26 +496,10 @@
           'natural=wood|scrub|heath|grassland',
           'leisure=park|garden'
         ]
-      },
-      macro_mobilites: {
-        title:'Mobilités douces (piétons)',
-        selectors:[
-          { types:['way'], filter:'["highway"="footway"]' },
-          { types:['way'], filter:'["highway"="footway"]["footway"="sidewalk"]' },
-          { types:['way'], filter:'["highway"="path"]["foot"~"^(designated|yes)$"]' },
-          { types:['way'], filter:'["highway"="pedestrian"]' },
-          { types:['way'], filter:'["footway"="crossing"]' }, // lignes de traversée piéton
-          { types:['node'], filter:'["highway"="crossing"]' }, // passages piétons (noeuds)
-          { types:['way'], filter:'["highway"="steps"]' }      // escaliers (optionnel)
-        ],
-        doc:[
-          'highway=footway|pedestrian|steps, footway=sidewalk|crossing',
-          'highway=crossing (noeuds), path[foot=designated|yes]'
-        ]
       }
     };
 
-    // Résolution macros + sous-macros -> filtres Overpass
+    // CHANGEMENT: Résolution des macros -> filtres Overpass
     function resolveWordsToFilters(words) {
       const nodeFilters = new Set();
       const wayFilters = new Set();
@@ -581,74 +512,24 @@
         if (types.includes('relation')) relFilters.add(sel.filter);
       }
 
-      function expandMacroKey(mKey) {
-        const def = macros[mKey];
-        if (!def) return;
-        (def.selectors || []).forEach(addSelector);
-      }
-
-      function expandSubMacro(mKey, subKey) {
-        const def = macros[mKey];
-        if (!def) return false;
-        if (def.subs && def.subs[subKey]) {
-          (def.subs[subKey].selectors || []).forEach(addSelector);
-          return true;
-        }
-        return false;
-      }
-
-      for (const raw of words) {
-        let w = raw;
-
-        // Notation sous-macro: ex "transport:bus"
-        if (w.includes(':')) {
-          const [base, sub] = w.split(':', 2);
-          const alias = macroAliases[base] || base;
-          const mKey = macroAliases[alias] || alias; // normaliser vers macro_*
-          // si alias retourne déjà 'macro_...'
-          const macroKey = mKey.startsWith('macro_') ? mKey : macroAliases[mKey] || mKey;
-          if (macroKey.startsWith('macro_')) {
-            // Sous-macro via alias directe (ex: "bus" → macro_transport:bus)
-            const aliasFull = macroAliases[w];
-            if (aliasFull && aliasFull.includes(':')) {
-              const [ak, asub] = aliasFull.split(':', 2);
-              if (!expandSubMacro(ak, asub)) expandMacroKey(ak);
-              continue;
-            }
-            // Sinon base:sub
-            if (!expandSubMacro(macroKey, sub)) {
-              // fallback macro base si sous-macro inconnue
-              expandMacroKey(macroKey);
-            }
-            continue;
-          }
-        }
-
-        // Alias directs vers sous-macro (ex "bus" → macro_transport:bus)
-        const aliasFull = macroAliases[w];
-        if (aliasFull && aliasFull.includes(':')) {
-          const [mk, subk] = aliasFull.split(':', 2);
-          if (!expandSubMacro(mk, subk)) expandMacroKey(mk);
-          continue;
-        }
-
-        // Alias vers macro (ex "eau" → macro_eau)
-        const aliasMacro = macroAliases[w];
-        if (aliasMacro && aliasMacro.startsWith('macro_')) {
-          expandMacroKey(aliasMacro);
-          continue;
-        }
-
-        // Sujets atomiques connus
-        const defs = topics[w];
-        if (defs) {
-          defs.forEach(d => {
+      words.forEach(w => {
+        // 1) Sujets atomiques connus
+        if (topics[w]) {
+          topics[w].forEach(d => {
             if (d.type === 'node') nodeFilters.add(d.filter);
             else if (d.type === 'way') wayFilters.add(d.filter);
             else if (d.type === 'relation') relFilters.add(d.filter);
           });
+          return;
         }
-      }
+        // 2) Macros
+        const mk = macroAliases[w];
+        if (mk && macros[mk]) {
+          macros[mk].selectors.forEach(addSelector);
+          return;
+        }
+        // Silencieux si inconnu: laissé de côté
+      });
 
       return {
         nodeFilters: Array.from(nodeFilters),
@@ -706,6 +587,7 @@
     const advMinCoefficient = document.getElementById('advMinCoefficient');
     const advMinDistMargin = document.getElementById('advMinDistMargin');
 
+    // Gap list
     const gapListPanel = document.getElementById('gapListPanel');
     const gapListToggle = document.getElementById('gapListToggle');
     const gapListContent = document.getElementById('gapListContent');
@@ -754,15 +636,12 @@
       return tags.highway === 'busway' || 'busway' in tags || Object.keys(tags).some(k => k.startsWith('bus:lanes')) || tags.bus === 'designated' || tags.psv === 'designated';
     }
 
-    // Styles lignes/polygones (réseau cyclable en VERT)
+    // Styles lignes/polygones: Réseau cyclable en VERT
     function getStyleForFeature(tags) {
       if (isCycleLike(tags)) return { color: '#16a34a', weight: 3, opacity: 0.95 };
       if (tags.highway === 'footway')  return { color: '#8b5e3c', weight: 3, opacity: 0.9, dashArray: '6,4' };
       if (tags.highway === 'path')     return { color: '#7c3aed', weight: 3, opacity: 0.9, dashArray: '8,4' };
-      if (tags.highway === 'pedestrian') return { color: '#15803d', weight: 3, opacity: 0.9, dashArray: '4,2' };
       if (tags.highway === 'busway' || 'busway' in tags || Object.keys(tags).some(k => k.startsWith('bus:lanes'))) return { color: '#f59e0b', weight: 4, opacity: 0.95 };
-      if (tags.railway)   return { color: '#6b7280', weight: 3, opacity: 0.9, dashArray: '6,3' };
-      if (tags.aerialway) return { color: '#fb7185', weight: 3, opacity: 0.9, dashArray: '4,4' };
       if (tags.waterway === 'river')   return { color: '#1d4ed8', weight: 4, opacity: 0.9 };
       if (tags.waterway === 'canal')   return { color: '#0ea5e9', weight: 4, opacity: 0.9 };
       if (tags.waterway === 'stream')  return { color: '#60a5fa', weight: 3, opacity: 0.9 };
@@ -772,6 +651,9 @@
       if (tags.natural === 'water' || tags.water || tags.landuse === 'reservoir' || tags.natural === 'wetland' || tags.waterway === 'riverbank') {
         return { color: '#38bdf8', weight: 2, opacity: 0.8, fill: true, fillColor: '#93c5fd', fillOpacity: 0.35 };
       }
+      if (tags.leisure === 'park')     return { color: '#16a34a', weight: 2, opacity: 0.8, fill: true, fillColor: '#86efac', fillOpacity: 0.25 };
+      if (tags.railway)   return { color: '#6b7280', weight: 3, opacity: 0.9, dashArray: '6,3' };
+      if (tags.aerialway) return { color: '#fb7185', weight: 3, opacity: 0.9, dashArray: '4,4' };
       if (['industrial','commercial','retail'].includes(tags.landuse)) {
         return { color: '#f97316', weight: 2, fill: true, fillColor: '#fdba74', fillOpacity: 0.25 };
       }
@@ -785,7 +667,7 @@
     function parseQuery(q) {
       const lower = q.toLowerCase().trim();
       const m = lower.match(/(.+?)\s+in\s+(.+)$/i);
-      if (!m) throw new Error('Format attendu: "sujets in ville" (ex: transport:bus et mobilites_douces in Toulouse)');
+      if (!m) throw new Error('Format attendu: "sujets in ville" (ex: cycleway et eau in Toulouse)');
       const topicRaw = m[1];
       const city = m[2].trim();
       if (!city) throw new Error('La ville est requise.');
@@ -826,14 +708,14 @@
       return Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
     }
 
-    // Overpass par lots avec recursion >> (pour relations route=*)
+    // Overpass par lots (évite timeouts)
     async function fetchOverpassBatches(bbox, nodeFilters, wayFilters, relFilters, onBatchProgress) {
       const statements = [];
       nodeFilters.forEach(f => statements.push(`node${f}(${bbox});`));
       wayFilters.forEach(f => statements.push(`way${f}(${bbox});`));
       relFilters.forEach(f => statements.push(`relation${f}(${bbox});`));
 
-      const maxPerBatch = 16;
+      const maxPerBatch = 18;
       const batches = [];
       for (let i = 0; i < statements.length; i += maxPerBatch) {
         batches.push(statements.slice(i, i + maxPerBatch));
@@ -845,8 +727,7 @@
         const query = `[out:json][timeout:180];
 (
   ${parts}
-)->.s;
-(.s; >>;);
+);
 out geom;`;
         const opUrl = 'https://overpass-api.de/api/interpreter';
         const res = await fetch(opUrl, { method: 'POST', body: `data=${encodeURIComponent(query)}` });
@@ -860,7 +741,7 @@ out geom;`;
           if (!elementsMap.has(key)) elementsMap.set(key, el);
         });
         if (onBatchProgress) onBatchProgress(i + 1, batches.length);
-        await new Promise(r => setTimeout(r, 60)); // petite pause
+        await new Promise(r => setTimeout(r, 60));
       }
       return Array.from(elementsMap.values());
     }
@@ -938,7 +819,7 @@ out geom;`;
       }
     }
 
-    // ==== Analyse Gaps (inchangée depuis la version précédente enrichie) ====
+    // ---- Analyse des GAPS (candidats internes + extrémités ; couleur = coefficient ; épaisseur fixe) ----
 
     function toRad(x) { return x * Math.PI / 180; }
     function haversine(a, b) {
@@ -955,10 +836,12 @@ out geom;`;
       analysisStatus.textContent = msg;
     }
 
+    // Echantillonne des points uniformément le long du segment
     function samplePointsOnSegment(start, end, resolutionMeters) {
       const total = haversine(start, end);
       if (!isFinite(total) || total <= 0) return [start, end];
       if (total <= resolutionMeters) return [start, end];
+
       const segments = Math.max(1, Math.round(total / resolutionMeters));
       const points = [];
       for (let k = 0; k <= segments; k++) {
@@ -970,6 +853,7 @@ out geom;`;
       return points;
     }
 
+    // Grille de voisinage
     function buildGrid(points, dLat, dLon) {
       const grid = new Map();
       function keyFor(lat, lon) {
@@ -985,6 +869,7 @@ out geom;`;
       return { grid, keyFor };
     }
 
+    // CHANGEMENT: candidats internes + extrémités
     function findComponentConnectionPoints(componentSet, graph, nodeCoord, options) {
       const {
         capEndpoints = 80,
@@ -1010,8 +895,11 @@ out geom;`;
         } else if (deg >= 2) {
           const key = cellKey(c.lat, c.lon);
           const prev = cellBest.get(key);
-          if (!prev) cellBest.set(key, { id, lat: c.lat, lon: c.lon, deg });
-          else if (preferJunctions && prev.deg < 3 && deg >= 3) cellBest.set(key, { id, lat: c.lat, lon: c.lon, deg });
+          if (!prev) {
+            cellBest.set(key, { id, lat: c.lat, lon: c.lon, deg });
+          } else if (preferJunctions && prev.deg < 3 && deg >= 3) {
+            cellBest.set(key, { id, lat: c.lat, lon: c.lon, deg });
+          }
         }
       });
 
@@ -1073,6 +961,7 @@ out geom;`;
       return pairs;
     }
 
+    // Config gap: couleur (orange -> rouge -> rouge foncé) + épaisseur fixe
     const GAP_STYLE_CONFIG = {
       colorStart: '#f59e0b',
       colorMid:   '#ef4444',
@@ -1095,7 +984,10 @@ out geom;`;
       const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
       return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : { r:0,g:0,b:0 };
     }
-    function rgbToHex(r,g,b) { const toHex = v => ('0' + v.toString(16)).slice(-2); return `#${toHex(r)}${toHex(g)}${toHex(b)}`; }
+    function rgbToHex(r,g,b) {
+      const toHex = v => ('0' + v.toString(16)).slice(-2);
+      return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
     function lerp(a, b, t) { return a + (b - a) * t; }
     function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
@@ -1168,7 +1060,7 @@ out geom;`;
 
       setAnalysisProgress(3, `Préparation…`);
 
-      // 1) Collecter voies cyclables (+ option bus lanes)
+      // Collecter les voies pertinentes
       setAnalysisProgress(5, 'Collecte des tronçons cyclables…');
       const polylines = [];
       for (const el of lastFetchedElements) {
@@ -1184,7 +1076,7 @@ out geom;`;
         return;
       }
 
-      // 2) Graphe (échantillonnage)
+      // Graphe
       setAnalysisProgress(12, `Construction du graphe (résolution ${sampleResolution} m)…`);
       const graph = new Map();
       const nodeCoord = new Map();
@@ -1227,7 +1119,7 @@ out geom;`;
       const allNodes = Array.from(nodeCoord.entries()).map(([id, { lat, lon }]) => ({ id, lat, lon }));
       setAnalysisProgress(30, `Noeuds générés: ${allNodes.length.toLocaleString('fr-FR')}`);
 
-      // 3) Jointures virtuelles
+      // Jointures locales
       setAnalysisProgress(35, 'Jointure des points proches…');
       const centerLat = map.getCenter().lat;
       const degLatJoin = joinThreshold / 111320;
@@ -1270,7 +1162,7 @@ out geom;`;
         }
       }
 
-      // 4) Composantes
+      // Composantes
       setAnalysisProgress(52, 'Recherche des réseaux…');
       const visited = new Set();
       const components = [];
@@ -1283,7 +1175,9 @@ out geom;`;
         while (q.length) {
           const cur = q.shift();
           comp.add(cur);
-          graph.get(cur)?.forEach(n => { if (!visited.has(n)) { visited.add(n); q.push(n); } });
+          graph.get(cur)?.forEach(n => {
+            if (!visited.has(n)) { visited.add(n); q.push(n); }
+          });
         }
         components.push(comp);
         if ((idx % 5000) === 0) {
@@ -1292,24 +1186,24 @@ out geom;`;
         }
       }
 
-      // 5) Index comp
+      // Index comp
       setAnalysisProgress(64, 'Préparation des réseaux…');
       const idToComp = new Map();
       components.forEach((comp, cid) => comp.forEach(n => idToComp.set(n, cid)));
       const nodesWithComp = allNodes.map(n => ({ ...n, compId: idToComp.get(n.id) }));
 
-      // 6) Candidats
+      // Candidats (extrémités + nœuds internes espacés)
       setAnalysisProgress(68, 'Extraction des candidats de connexion…');
-      const candidateSpacingMeters = Math.max(20, (parseFloat(advCandidateSpacing?.value) || 120));
+      const candidateSpacingMeters = Math.max(20, adv.candidateSpacingMeters ?? Math.max(60, sampleResolution));
       const compCandidates = components.map(comp =>
         findComponentConnectionPoints(
           comp, graph, nodeCoord,
           {
-            capEndpoints: parseInt(advCapEndpoints?.value || 80, 10),
-            maxInternalPerComponent: parseInt(advMaxInternalPerComp?.value || 60, 10),
+            capEndpoints: adv.capEndpoints ?? 80,
+            maxInternalPerComponent: adv.maxInternalPerComponent ?? 60,
             candidateSpacingMeters,
             centerLat,
-            preferJunctions: !!advPreferJunctions?.checked
+            preferJunctions: adv.preferJunctions ?? true
           }
         )
       );
@@ -1317,7 +1211,7 @@ out geom;`;
       const idToIndex = new Map();
       nodesWithComp.forEach((n, i) => idToIndex.set(n.id, i));
 
-      // 7) Appariement
+      // Appariement sur candidats
       setAnalysisProgress(75, 'Recherche des gaps inter-réseaux…');
       const totalPairs = (components.length * (components.length - 1)) / 2;
       let pairCount = 0;
@@ -1332,14 +1226,20 @@ out geom;`;
         for (let b = a + 1; b < components.length; b++) {
           const A = compCandidates[a];
           const B = compCandidates[b];
-          if (!A || !B || A.length === 0 || B.length === 0) { pairCount++; continue; }
+          if (!A || !B || A.length === 0 || B.length === 0) {
+            pairCount++;
+            continue;
+          }
 
           const pairs = greedyNearestUniquePairs(A, B, joinThreshold, gapRadius, degLatGap, degLonGap, maxPairsPerCompPair);
+
           for (const p of pairs) {
             const aNode = A[p.ai], bNode = B[p.bi];
             const i = idToIndex.get(aNode.id);
             const j = idToIndex.get(bNode.id);
-            if (i != null && j != null) suggestions.push({ i, j, d: p.d });
+            if (i != null && j != null) {
+              suggestions.push({ i, j, d: p.d });
+            }
           }
 
           pairCount++;
@@ -1351,7 +1251,7 @@ out geom;`;
         }
       }
 
-      // 8) Nettoyage
+      // Nettoyage des suggestions
       setAnalysisProgress(92, 'Nettoyage des suggestions…');
       const redundancyTolerance = 8; // m
       const C = components.length;
@@ -1410,16 +1310,16 @@ out geom;`;
       let displaySuggestions = suggestions;
       if (adv.enableConnectivityFilter) {
         displaySuggestions = suggestions.filter(s => {
-          if (s.d <= joinThreshold + (parseFloat(advMinDistMargin?.value) || DEFAULT_GAP_FILTERS.minDistanceMarginMeters)) return false;
+          if (s.d <= joinThreshold + adv.minDistanceMarginMeters) return false;
           const P = nodesWithComp[s.i], Q = nodesWithComp[s.j];
           const sizeA = compSizes[P.compId] || 0;
           const sizeB = compSizes[Q.compId] || 0;
           const coef = computeGapCoefficient(sizeA, sizeB, maxComponentSize, s.d, joinThreshold, gapRadius);
-          return coef >= (parseFloat(advMinCoefficient?.value) || DEFAULT_GAP_FILTERS.minCoefficient);
+          return coef >= adv.minCoefficient;
         });
       }
 
-      // 10) Affichage
+      // Affichage
       setAnalysisProgress(97, 'Affichage des gaps…');
       suggestionLines.forEach(l => map.removeLayer(l));
       suggestionLines = [];
@@ -1519,38 +1419,18 @@ out geom;`;
       });
     }
 
-    // Docs Macros (affiche macros + sous-macros + alias)
+    // ---- Docs Macros (générées depuis macros) ----
     function renderMacroDocs() {
       const blocks = Object.entries(macros).map(([key, def]) => {
-        const aliases = Object.entries(macroAliases).filter(([k,v]) => v === key).map(([k]) => k).join(', ');
         const docList = (def.doc || []).map(d => `<li><code>${d}</code></li>`).join('');
-
-        let subs = '';
-        if (def.subs) {
-          subs = Object.entries(def.subs).map(([sk, sdef]) => {
-            const sDoc = (sdef.doc || []).map(d => `<li><code>${d}</code></li>`).join('');
-            // aliases vers sous-macro
-            const subAliases = Object.entries(macroAliases).filter(([k,v]) => v === `${key}:${sk}`).map(([k]) => k).join(', ');
-            return `
-              <div class="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <div class="flex items-center justify-between">
-                  <h4 class="font-semibold text-gray-800">${sdef.title || (def.title + ' — ' + sk)}</h4>
-                  <span class="text-xs text-gray-500">alias: ${subAliases || '-'}</span>
-                </div>
-                <ul class="list-disc list-inside space-y-1 text-gray-700">${sDoc}</ul>
-              </div>
-            `;
-          }).join('');
-        }
-
+        const aliases = Object.entries(macroAliases).filter(([k,v]) => v === key).map(([k]) => k).join(', ');
         return `
           <div class="p-4 border border-gray-200 rounded-xl">
             <div class="flex items-center justify-between mb-2">
               <h3 class="text-lg font-semibold text-gray-800">${def.title}</h3>
               <span class="text-xs text-gray-500">alias: ${aliases || '-'}</span>
             </div>
-            ${docList ? `<ul class="list-disc list-inside space-y-1 text-gray-700">${docList}</ul>` : ''}
-            ${subs}
+            <ul class="list-disc list-inside space-y-1 text-gray-700">${docList}</ul>
           </div>
         `;
       }).join('');
@@ -1611,7 +1491,9 @@ out geom;`;
       macroDocsModal.classList.remove('hidden');
     });
     closeMacroDocs.addEventListener('click', () => macroDocsModal.classList.add('hidden'));
-    macroDocsModal.addEventListener('click', (e) => { if (e.target === macroDocsModal) macroDocsModal.classList.add('hidden'); });
+    macroDocsModal.addEventListener('click', (e) => {
+      if (e.target === macroDocsModal) macroDocsModal.classList.add('hidden');
+    });
   </script>
 </body>
 </html>
