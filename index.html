@@ -254,7 +254,7 @@
         { type: 'way', filter: '["access"="no"]["bus"="yes"]' }
       ],
 
-      // Réseaux d'eau
+      // Réseaux d'eau, etc.
       reseaux_eau: [
         { type: 'way', filter: '["waterway"~"^(river|stream|canal|drain|ditch|wadi)$"]' },
         { type: 'way',      filter: '["natural"="water"]' },
@@ -384,7 +384,6 @@
       return Object.keys(tags).some(k => /^cycleway/.test(k)) || typeof tags.cycleway !== 'undefined';
     }
     function isRoadHighway(h) { return ROAD_HIGHWAYS.has(h); }
-
     function isCycleLike(tags) {
       return tags.highway === 'cycleway'
         || hasCyclewayKey(tags)
@@ -393,14 +392,13 @@
         || (tags.highway === 'footway' && /^(designated|official)$/.test(tags.bicycle||''))
         || (isRoadHighway(tags.highway || '') && (hasCyclewayKey(tags) || /^(designated|official|yes)$/.test(tags.bicycle||'')));
     }
-
     function isBusLaneLike(tags) {
       return tags.highway === 'busway' || 'busway' in tags || Object.keys(tags).some(k => k.startsWith('bus:lanes')) || tags.bus === 'designated' || tags.psv === 'designated';
     }
 
     // Styles lignes/polygones
     function getStyleForFeature(tags) {
-      // Réseau cyclable en VERT
+      // Réseau cyclable en VERT (CHANGEMENT)
       if (isCycleLike(tags)) return { color: '#16a34a', weight: 3, opacity: 0.95 };
       if (tags.highway === 'footway')  return { color: '#8b5e3c', weight: 3, opacity: 0.9, dashArray: '6,4' };
       if (tags.highway === 'path')     return { color: '#7c3aed', weight: 3, opacity: 0.9, dashArray: '8,4' };
@@ -592,7 +590,7 @@ out geom;`;
       }
     }
 
-    // ---- Analyse des GAPS (couleur = coefficient longueur x importance des réseaux ; épaisseur fixe) ----
+    // ---- Analyse des GAPS (CHANGEMENT: candidats = extrémités + nœuds internes échantillonnés) ----
 
     function toRad(x) { return x * Math.PI / 180; }
     function haversine(a, b) {
@@ -642,40 +640,66 @@ out geom;`;
       return { grid, keyFor };
     }
 
-    function pickComponentEndpoints(componentSet, graph, nodeCoord, cap = 40, fallbackSample = 16) {
+    // -------- CHANGEMENT MAJEUR: candidats internes + extrémités --------
+    // Pour chaque composante, on génère des points candidats:
+    // - Tous les nœuds d'extrémité (degré = 1), éventuellement réduits si trop nombreux.
+    // - Un échantillonnage spatial de nœuds internes (degré >= 2) via une grille,
+    //   en privilégiant les jonctions (degré >= 3), pour couvrir les boucles et structures internes.
+    function findComponentConnectionPoints(componentSet, graph, nodeCoord, options) {
+      const {
+        capEndpoints = 80,              // max extrémités retenues (si >, on sous-échantillonne)
+        maxInternalPerComponent = 60,   // max de nœuds internes retenus
+        candidateSpacingMeters = 120,   // espacement cible (m) pour l'échantillonnage spatial
+        centerLat = 45,                 // pour conversion mètres -> degrés
+        preferJunctions = true          // privilégier degré >= 3 dans une même cellule
+      } = options || {};
+
+      const degLat = candidateSpacingMeters / 111320;
+      const degLon = candidateSpacingMeters / (111320 * Math.cos(centerLat * Math.PI / 180));
+      const cellKey = (lat, lon) => `${Math.floor(lon / degLon)},${Math.floor(lat / degLat)}`;
+
       const endpoints = [];
+      const cellBest = new Map(); // key -> {id,lat,lon,deg}
+
       componentSet.forEach(id => {
         const deg = graph.get(id)?.size || 0;
+        const c = nodeCoord.get(id);
+        if (!c) return;
         if (deg === 1) {
-          const c = nodeCoord.get(id);
-          if (c) endpoints.push({ id, lat: c.lat, lon: c.lon });
+          endpoints.push({ id, lat: c.lat, lon: c.lon, deg });
+        } else if (deg >= 2) {
+          const key = cellKey(c.lat, c.lon);
+          const prev = cellBest.get(key);
+          if (!prev) {
+            cellBest.set(key, { id, lat: c.lat, lon: c.lon, deg });
+          } else if (preferJunctions && prev.deg < 3 && deg >= 3) {
+            // remplace par une jonction si possible
+            cellBest.set(key, { id, lat: c.lat, lon: c.lon, deg });
+          }
         }
       });
 
-      if (endpoints.length > 0) {
-        if (endpoints.length <= cap) return endpoints;
-        const step = Math.ceil(endpoints.length / cap);
-        const reduced = [];
-        for (let i = 0; i < endpoints.length; i += step) reduced.push(endpoints[i]);
-        return reduced;
+      // Sous-échantillonnage des extrémités si nécessaire
+      let endpointsReduced = endpoints;
+      if (endpoints.length > capEndpoints) {
+        const step = Math.ceil(endpoints.length / capEndpoints);
+        endpointsReduced = [];
+        for (let i = 0; i < endpoints.length; i += step) endpointsReduced.push(endpoints[i]);
       }
 
-      const nodes = Array.from(componentSet);
-      const res = [];
-      if (nodes.length <= fallbackSample) {
-        nodes.forEach(id => {
-          const c = nodeCoord.get(id);
-          if (c) res.push({ id, lat: c.lat, lon: c.lon });
-        });
-      } else {
-        const step = Math.ceil(nodes.length / fallbackSample);
-        for (let i = 0; i < nodes.length; i += step) {
-          const id = nodes[i];
-          const c = nodeCoord.get(id);
-          if (c) res.push({ id, lat: c.lat, lon: c.lon });
-        }
+      // Collecte et sous-échantillonnage des internes
+      let internal = Array.from(cellBest.values());
+      if (internal.length > maxInternalPerComponent) {
+        const step = Math.ceil(internal.length / maxInternalPerComponent);
+        const reduced = [];
+        for (let i = 0; i < internal.length; i += step) reduced.push(internal[i]);
+        internal = reduced;
       }
-      return res;
+
+      // Fusion + dédoublonnage
+      const outMap = new Map();
+      [...endpointsReduced, ...internal].forEach(p => outMap.set(p.id, { id: p.id, lat: p.lat, lon: p.lon }));
+      return Array.from(outMap.values());
     }
 
     function greedyNearestUniquePairs(A, B, joinThreshold, gapRadius, dLat, dLon, maxPairs = 2) {
@@ -721,12 +745,19 @@ out geom;`;
       colorStart: '#f59e0b',  // orange-500
       colorMid:   '#ef4444',  // red-500
       colorEnd:   '#7f1d1d',  // red-900
-      gapLineWeight: 4,       // épaisseur fixe
+      gapLineWeight: 4,       // épaisseur fixe (CHANGEMENT)
       gapMarkerRadius: 6,
       gapMarkerBorderWeight: 2,
       gapMarkerFillOpacity: 0.95,
       dashArray: '6,6',
       lineOpacity: 0.95
+    };
+
+    // Filtre optionnel pour éviter des connexions trop triviales/peu utiles
+    const GAP_FILTERS = {
+      enableConnectivityFilter: true,
+      minCoefficient: 0.08,           // coefficient minimal (0..1) pour afficher un gap
+      minDistanceMarginMeters: 1.5     // d > joinThreshold + marge
     };
 
     function hexToRgb(hex) {
@@ -740,10 +771,7 @@ out geom;`;
     function lerp(a, b, t) { return a + (b - a) * t; }
     function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
-    // Coefficient d'importance combinant longueur et importance des deux réseaux
-    // - importance réseaux = géométrique des tailles normalisées (pénalise si un réseau est petit)
-    // - longueur = distance normalisée joinThreshold..gapRadius
-    // - coefficient = géométrique des deux (valeur 0..1)
+    // Coefficient combinant longueur et importance relative des deux réseaux (CHANGEMENT)
     function computeGapCoefficient(sizeA, sizeB, maxComponentSize, distance, joinThreshold, gapRadius) {
       const denom = Math.max(1, gapRadius - joinThreshold);
       const distScore = clamp01((distance - joinThreshold) / denom);
@@ -751,9 +779,10 @@ out geom;`;
       if (maxComponentSize > 0) {
         const a = clamp01(sizeA / maxComponentSize);
         const b = clamp01(sizeB / maxComponentSize);
+        // moyenne géométrique: pénalise si l'un des deux réseaux est petit
         netScore = Math.sqrt(a * b);
       }
-      const coef = Math.sqrt(distScore * netScore);
+      const coef = Math.sqrt(distScore * netScore); // combine les deux (géométrique)
       return clamp01(coef);
     }
 
@@ -792,7 +821,7 @@ out geom;`;
 
       setAnalysisProgress(3, `Préparation…`);
 
-      // 1) Collecter les voies pertinentes
+      // 1) Collecter les voies pertinentes (cycle + option bus lanes)
       setAnalysisProgress(5, 'Collecte des tronçons cyclables…');
       const polylines = [];
       for (const el of lastFetchedElements) {
@@ -808,10 +837,10 @@ out geom;`;
         return;
       }
 
-      // 2) Construire le graphe
+      // 2) Construire le graphe en échantillonnant tous les segments
       setAnalysisProgress(12, `Construction du graphe (résolution ${sampleResolution} m)…`);
-      const graph = new Map();
-      const nodeCoord = new Map();
+      const graph = new Map();   // nodeId -> Set(neighborId)
+      const nodeCoord = new Map(); // nodeId -> {lat, lon}
       function getNodeId(lat, lon, prec) { return `${Math.round(lat * prec)}_${Math.round(lon * prec)}`; }
       function ensureNode(lat, lon) {
         const id = getNodeId(lat, lon, precision);
@@ -851,7 +880,7 @@ out geom;`;
       const allNodes = Array.from(nodeCoord.entries()).map(([id, { lat, lon }]) => ({ id, lat, lon }));
       setAnalysisProgress(30, `Noeuds générés: ${allNodes.length.toLocaleString('fr-FR')}`);
 
-      // 3) Connexions virtuelles
+      // 3) Connexions virtuelles: joindre points à ≤ joinThreshold
       setAnalysisProgress(35, 'Jointure des points proches…');
       const centerLat = map.getCenter().lat;
       const degLatJoin = joinThreshold / 111320;
@@ -897,7 +926,7 @@ out geom;`;
       // 4) Composantes connexes
       setAnalysisProgress(52, 'Recherche des réseaux…');
       const visited = new Set();
-      const components = [];
+      const components = []; // array of Set(nodeId)
       for (let idx = 0; idx < allNodes.length; idx++) {
         const startId = allNodes[idx].id;
         if (visited.has(startId)) continue;
@@ -924,14 +953,21 @@ out geom;`;
       components.forEach((comp, cid) => comp.forEach(n => idToComp.set(n, cid)));
       const nodesWithComp = allNodes.map(n => ({ ...n, compId: idToComp.get(n.id) }));
 
-      // 6) Extrémités
-      setAnalysisProgress(68, 'Extraction des extrémités…');
-      const compEndpoints = components.map(comp => pickComponentEndpoints(comp, graph, nodeCoord, 40, 16));
+      // -------- CHANGEMENT: extraction de CANDIDATS (extrémités + nœuds internes échantillonnés) --------
+      setAnalysisProgress(68, 'Extraction des candidats de connexion…');
+      const candidateSpacingMeters = Math.max(60, sampleResolution); // spacing spatial
+      const compCandidates = components.map(comp =>
+        findComponentConnectionPoints(
+          comp, graph, nodeCoord,
+          { capEndpoints: 80, maxInternalPerComponent: 60, candidateSpacingMeters, centerLat, preferJunctions: true }
+        )
+      );
 
+      // Pour afficher, map id -> index dans nodesWithComp
       const idToIndex = new Map();
       nodesWithComp.forEach((n, i) => idToIndex.set(n.id, i));
 
-      // 7) Appariement glouton
+      // 6) Appariement glouton minimal unique par paire de composantes (sur les candidats)
       setAnalysisProgress(75, 'Recherche des gaps inter-réseaux…');
       const totalPairs = (components.length * (components.length - 1)) / 2;
       let pairCount = 0;
@@ -944,8 +980,8 @@ out geom;`;
 
       for (let a = 0; a < components.length; a++) {
         for (let b = a + 1; b < components.length; b++) {
-          const A = compEndpoints[a];
-          const B = compEndpoints[b];
+          const A = compCandidates[a];
+          const B = compCandidates[b];
           if (!A || !B || A.length === 0 || B.length === 0) {
             pairCount++;
             continue;
@@ -971,7 +1007,7 @@ out geom;`;
         }
       }
 
-      // 7.5) Nettoyage des suggestions
+      // 7) Nettoyage des suggestions (suppression redondances)
       setAnalysisProgress(92, 'Nettoyage des suggestions…');
       const redundancyTolerance = 8; // m
       const C = components.length;
@@ -1023,18 +1059,31 @@ out geom;`;
       }
       suggestions = Array.from(bestByPair.values());
 
-      // 8) Affichage (couleur = coefficient ; épaisseur fixe)
+      // 8) Filtre optionnel par coefficient (éviter connexions trop triviales)
+      const compSizes = components.map(c => c.size || 0);
+      const maxComponentSize = compSizes.length ? Math.max(...compSizes) : 0;
+
+      let displaySuggestions = suggestions;
+      if (GAP_FILTERS.enableConnectivityFilter) {
+        displaySuggestions = suggestions.filter(s => {
+          if (s.d <= joinThreshold + GAP_FILTERS.minDistanceMarginMeters) return false;
+          const P = nodesWithComp[s.i], Q = nodesWithComp[s.j];
+          const sizeA = compSizes[P.compId] || 0;
+          const sizeB = compSizes[Q.compId] || 0;
+          const coef = computeGapCoefficient(sizeA, sizeB, maxComponentSize, s.d, joinThreshold, gapRadius);
+          return coef >= GAP_FILTERS.minCoefficient;
+        });
+      }
+
+      // 9) Affichage (couleur = coefficient ; épaisseur fixe)
       setAnalysisProgress(97, 'Affichage des gaps…');
       suggestionLines.forEach(l => map.removeLayer(l));
       suggestionLines = [];
       gapMarkers.forEach(m => map.removeLayer(m));
       gapMarkers = [];
 
-      const compSizes = components.map(c => c.size || 0);
-      const maxComponentSize = compSizes.length ? Math.max(...compSizes) : 0;
-
-      suggestions.sort((a, b) => a.d - b.d);
-      suggestions.forEach(s => {
+      displaySuggestions.sort((a, b) => a.d - b.d);
+      displaySuggestions.forEach(s => {
         const P = nodesWithComp[s.i], Q = nodesWithComp[s.j];
         const compA = P.compId, compB = Q.compId;
         const sizeA = compSizes[compA] || 0;
@@ -1074,13 +1123,13 @@ out geom;`;
         gapMarkers.push(m);
       });
 
-      gapCount.textContent = String(suggestions.length);
-      zoomGaps.disabled = suggestions.length === 0;
+      gapCount.textContent = String(displaySuggestions.length);
+      zoomGaps.disabled = displaySuggestions.length === 0;
 
       if (components.length <= 1) {
         setAnalysisProgress(100, `Un seul réseau détecté ✔️`);
       } else {
-        setAnalysisProgress(100, `${components.length} réseaux — ${suggestions.length} gaps suggérés`);
+        setAnalysisProgress(100, `${components.length} réseaux — ${displaySuggestions.length} gaps suggérés`);
       }
     }
 
