@@ -71,7 +71,6 @@
           <label class="block text-gray-800 text-xl font-bold">
             🔍 Que voulez-vous explorer?
           </label>
-          <!-- CHANGEMENT: bouton documentation macros -->
           <button id="openMacroDocs"
                   class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/80 border border-gray-200 text-gray-700 hover:bg-white hover:shadow">
             <i class="fa-solid fa-book-open"></i> Dictionnaire des macros
@@ -95,7 +94,6 @@
           <p id="errorMessage" class="text-red-700 leading-relaxed whitespace-pre-wrap"></p>
         </div>
 
-        <!-- CHANGEMENT: Aide enrichie -->
         <div class="p-4 bg-blue-50/50 border border-blue-200 rounded-2xl text-sm md:text-base space-y-2">
           <p class="font-semibold text-blue-800 flex items-center gap-2">📋 Sujets supportés (combinez-les!)</p>
           <p class="text-blue-700">
@@ -130,7 +128,12 @@
 
   <!-- Analyse Gaps Panel (avec Paramètres avancés + Liste) -->
   <div id="analysisPanel" class="hidden absolute bottom-6 left-6 z-30">
-    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-5 border border-gray-200/50 space-y-3 min-w-[340px]">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-4 md:p-5 border border-gray-200/50 space-y-3 min-w-[340px]">
+      <!-- NOUVEAU: Bouton pour cacher le panneau -->
+      <button id="hideAnalysisPanelBtn" class="absolute top-2 right-2 p-2 rounded-full text-gray-500 hover:bg-gray-100 transition">
+          <i class="fa-solid fa-chevron-down"></i>
+      </button>
+
       <div class="flex items-center gap-2">
         <span class="text-xl">🕳️</span>
         <h3 class="font-bold text-gray-800">Gaps réseau cyclable</h3>
@@ -211,6 +214,12 @@
     </div>
   </div>
 
+  <!-- NOUVEAU: Bouton pour ré-afficher le panneau d'analyse -->
+  <button id="showAnalysisPanelBtn"
+      class="hidden absolute bottom-6 left-6 z-[1000] bg-white/90 backdrop-blur-md shadow-lg rounded-lg p-3 text-gray-700 font-semibold hover:bg-gray-50 transition-transform hover:scale-105">
+      <i class="fa-solid fa-eye mr-2"></i> Afficher l'analyse
+  </button>
+
   <!-- Liste dépliable des discontinuités -->
   <div id="gapListPanel" class="hidden absolute top-6 right-6 z-30 w-80">
     <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-200/50 overflow-hidden">
@@ -229,7 +238,7 @@
     </div>
   </div>
 
-  <!-- CHANGEMENT: Modal Dictionnaire des macros -->
+  <!-- Modal Dictionnaire des macros -->
   <div id="macroDocsModal" class="modal-overlay hidden">
     <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-[92%] p-6 md:p-8 overflow-y-auto max-h-[85vh]">
       <div class="flex items-center justify-between mb-4">
@@ -267,7 +276,6 @@
         .toLowerCase();
     }
 
-    // CHANGEMENT: alias vers macros
     const macroAliases = {
       eau: 'macro_eau', water: 'macro_eau', reseaux_eau: 'macro_eau', water_networks: 'macro_eau',
       transport: 'macro_transport', reseaux_transports: 'macro_transport', transport_networks: 'macro_transport',
@@ -280,7 +288,6 @@
     function preprocessTopics(text) {
       let s = normalize(text);
       s = s.replace(/\s+(?:and|et)\s+/g, ','); // séparateur unique ,
-      // FR groupés en tokens composés
       s = s.replace(/\breseaux?\s+d'?eaux?\b/g, 'reseaux_eau');
       s = s.replace(/\breseaux?\s+de\s+transports?\b/g, 'reseaux_transports');
       s = s.replace(/\b(voies?|bandes?|couloirs?)\s+(de\s+)?bus\b/g, 'bus_lanes');
@@ -288,7 +295,6 @@
       s = s.replace(/\bzone\s+residentielles?\b/g, 'zone_residentielle');
       s = s.replace(/\bzone\s+commerciales?\b/g, 'zone_commerciale');
       s = s.replace(/\bespaces?\s+verts?\b/g, 'espaces_verts');
-      // EN -> FR
       s = s.replace(/\bwater\s+networks?\b/g, 'reseaux_eau');
       s = s.replace(/\btransport\s+networks?\b/g, 'reseaux_transports');
       s = s.replace(/\bbus\s+lanes?\b/g, 'bus_lanes');
@@ -297,9 +303,7 @@
       return s;
     }
 
-    // Sujet atomiques → définitions {type: node|way|relation, filter:'[...]'}
     const topics = {
-      // Points
       bus:        [{ type: 'node', filter: '["highway"="bus_stop"]' }],
       stop:       [{ type: 'node', filter: '["highway"="bus_stop"]' }],
       school:     [{ type: 'node', filter: '["amenity"="school"]' }],
@@ -320,12 +324,10 @@
         { type: 'way', filter: '["leisure"="swimming_pool"]' },
         { type: 'relation', filter: '["leisure"="swimming_pool"]' },
       ],
-      // Parcs
       park: [
         { type: 'way',      filter: '["leisure"="park"]' },
         { type: 'relation', filter: '["leisure"="park"]' }
       ],
-      // Cycleways
       cycleway: [
         { type: 'way', filter: '["highway"="cycleway"]' },
         { type: 'way', filter: '[~"^cycleway"~"."]' },
@@ -339,8 +341,6 @@
       sidewalk:   [{ type: 'way',  filter: '["highway"="footway"]["footway"="sidewalk"]' }],
       path:       [{ type: 'way',  filter: '["highway"="path"]' }],
       pathway:    [{ type: 'way',  filter: '["highway"="path"]' }],
-
-      // Bus lanes (inclut voies dédiées)
       bus_lanes: [
         { type: 'way', filter: '["highway"="busway"]' },
         { type: 'way', filter: '[~"^busway(:|$)"~"."]' },
@@ -350,8 +350,6 @@
         { type: 'way', filter: '["access"="no"]["psv"="yes"]' },
         { type: 'way', filter: '["access"="no"]["bus"="yes"]' }
       ],
-
-      // Cours d’eau individuels (atomiques)
       river:  [{ type: 'way', filter: '["waterway"="river"]' }],
       stream: [{ type: 'way', filter: '["waterway"="stream"]' }],
       canal:  [{ type: 'way', filter: '["waterway"="canal"]' }],
@@ -380,7 +378,6 @@
       ]
     };
 
-    // CHANGEMENT: Macros thématiques (hiérarchiques)
     const macros = {
       macro_eau: {
         title: 'Eau',
@@ -499,7 +496,6 @@
       }
     };
 
-    // CHANGEMENT: Résolution des macros -> filtres Overpass
     function resolveWordsToFilters(words) {
       const nodeFilters = new Set();
       const wayFilters = new Set();
@@ -513,7 +509,6 @@
       }
 
       words.forEach(w => {
-        // 1) Sujets atomiques connus
         if (topics[w]) {
           topics[w].forEach(d => {
             if (d.type === 'node') nodeFilters.add(d.filter);
@@ -522,13 +517,11 @@
           });
           return;
         }
-        // 2) Macros
         const mk = macroAliases[w];
         if (mk && macros[mk]) {
           macros[mk].selectors.forEach(addSelector);
           return;
         }
-        // Silencieux si inconnu: laissé de côté
       });
 
       return {
@@ -538,20 +531,17 @@
       };
     }
 
-    // Carte
     const map = L.map('map').setView([48.8566, 2.3522], 12);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; OpenStreetMap &copy; CARTO'
     }).addTo(map);
 
-    // État
     let featureLayers = [];
     let gapMarkers = [];
     let suggestionLines = [];
     let lastFetchedElements = [];
     let gapItems = [];
 
-    // DOM
     const searchInput = document.getElementById('searchInput');
     const searchButton = document.getElementById('searchButton');
     const errorDisplay = document.getElementById('errorDisplay');
@@ -563,7 +553,6 @@
     const fitButton = document.getElementById('fitButton');
     const searchPanel = document.querySelector('.search-panel');
     const newSearchButton = document.getElementById('newSearchButton');
-
     const analysisPanel = document.getElementById('analysisPanel');
     const startAnalysis = document.getElementById('startAnalysis');
     const analysisProgress = document.getElementById('analysisProgress');
@@ -575,8 +564,6 @@
     const joinThresholdInput = document.getElementById('joinThreshold');
     const gapRadiusInput = document.getElementById('gapRadius');
     const sampleResolutionInput = document.getElementById('sampleResolution');
-
-    // Avancés
     const advancedSettingsToggle = document.getElementById('advancedSettingsToggle');
     const advancedPanel = document.getElementById('advancedPanel');
     const advCandidateSpacing = document.getElementById('advCandidateSpacing');
@@ -586,21 +573,20 @@
     const advEnableFilter = document.getElementById('advEnableFilter');
     const advMinCoefficient = document.getElementById('advMinCoefficient');
     const advMinDistMargin = document.getElementById('advMinDistMargin');
-
-    // Gap list
     const gapListPanel = document.getElementById('gapListPanel');
     const gapListToggle = document.getElementById('gapListToggle');
     const gapListContent = document.getElementById('gapListContent');
     const gapListChevron = document.getElementById('gapListChevron');
     const gapListCount = document.getElementById('gapListCount');
-
-    // Docs macros
     const openMacroDocs = document.getElementById('openMacroDocs');
     const macroDocsModal = document.getElementById('macroDocsModal');
     const closeMacroDocs = document.getElementById('closeMacroDocs');
     const macroDocsContent = document.getElementById('macroDocsContent');
+    
+    // NOUVEAU: Éléments pour cacher/afficher le panneau
+    const hideAnalysisPanelBtn = document.getElementById('hideAnalysisPanelBtn');
+    const showAnalysisPanelBtn = document.getElementById('showAnalysisPanelBtn');
 
-    // Icônes points
     function getIconForFeature(tags) {
       if (tags.highway === 'bus_stop') return L.AwesomeMarkers.icon({ icon: 'bus', prefix: 'fa', markerColor: 'blue' });
       if (['school','college','university'].includes(tags.amenity)) return L.AwesomeMarkers.icon({ icon: 'school', prefix: 'fa', markerColor: 'green' });
@@ -618,7 +604,6 @@
       return L.AwesomeMarkers.icon({ icon: 'info-circle', prefix: 'fa', markerColor: 'gray' });
     }
 
-    // Helpers cyclables
     const ROAD_HIGHWAYS = new Set(['trunk','primary','secondary','tertiary','residential','unclassified','service','living_street','primary_link','secondary_link','tertiary_link']);
     function hasCyclewayKey(tags) {
       return Object.keys(tags).some(k => /^cycleway/.test(k)) || typeof tags.cycleway !== 'undefined';
@@ -636,7 +621,6 @@
       return tags.highway === 'busway' || 'busway' in tags || Object.keys(tags).some(k => k.startsWith('bus:lanes')) || tags.bus === 'designated' || tags.psv === 'designated';
     }
 
-    // Styles lignes/polygones: Réseau cyclable en VERT
     function getStyleForFeature(tags) {
       if (isCycleLike(tags)) return { color: '#16a34a', weight: 3, opacity: 0.95 };
       if (tags.highway === 'footway')  return { color: '#8b5e3c', weight: 3, opacity: 0.9, dashArray: '6,4' };
@@ -663,7 +647,6 @@
       return { color: '#555', weight: 2, opacity: 0.8 };
     }
 
-    // Parsing "topics in city" + macros
     function parseQuery(q) {
       const lower = q.toLowerCase().trim();
       const m = lower.match(/(.+?)\s+in\s+(.+)$/i);
@@ -708,7 +691,6 @@
       return Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
     }
 
-    // Overpass par lots (évite timeouts)
     async function fetchOverpassBatches(bbox, nodeFilters, wayFilters, relFilters, onBatchProgress) {
       const statements = [];
       nodeFilters.forEach(f => statements.push(`node${f}(${bbox});`));
@@ -757,7 +739,6 @@ out geom;`;
       try {
         const { nodeFilters, wayFilters, relFilters, city } = parseQuery(searchInput.value);
 
-        // Géocodage
         const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}&limit=1&addressdetails=1`;
         const nomRes = await fetch(nomUrl);
         if (!nomRes.ok) throw new Error('Échec du géocodage');
@@ -769,12 +750,10 @@ out geom;`;
         const bbox = `${south},${west},${north},${east}`;
         map.fitBounds([[south, west], [north, east]]);
 
-        // Téléchargement par lots
         const elements = await fetchOverpassBatches(bbox, nodeFilters, wayFilters, relFilters, (done, total) => {
           downloadStatus.textContent = `Téléchargement ${done}/${total}…`;
         });
 
-        // Affichage
         elements.forEach(el => {
           const tags = el.tags || {};
           const name = tags.name || 'Élément sans nom';
@@ -819,8 +798,6 @@ out geom;`;
       }
     }
 
-    // ---- Analyse des GAPS (candidats internes + extrémités ; couleur = coefficient ; épaisseur fixe) ----
-
     function toRad(x) { return x * Math.PI / 180; }
     function haversine(a, b) {
       const R = 6371000;
@@ -836,7 +813,6 @@ out geom;`;
       analysisStatus.textContent = msg;
     }
 
-    // Echantillonne des points uniformément le long du segment
     function samplePointsOnSegment(start, end, resolutionMeters) {
       const total = haversine(start, end);
       if (!isFinite(total) || total <= 0) return [start, end];
@@ -853,7 +829,6 @@ out geom;`;
       return points;
     }
 
-    // Grille de voisinage
     function buildGrid(points, dLat, dLon) {
       const grid = new Map();
       function keyFor(lat, lon) {
@@ -869,7 +844,6 @@ out geom;`;
       return { grid, keyFor };
     }
 
-    // CHANGEMENT: candidats internes + extrémités
     function findComponentConnectionPoints(componentSet, graph, nodeCoord, options) {
       const {
         capEndpoints = 80,
@@ -961,7 +935,6 @@ out geom;`;
       return pairs;
     }
 
-    // Config gap: couleur (orange -> rouge -> rouge foncé) + épaisseur fixe
     const GAP_STYLE_CONFIG = {
       colorStart: '#f59e0b',
       colorMid:   '#ef4444',
@@ -1060,7 +1033,6 @@ out geom;`;
 
       setAnalysisProgress(3, `Préparation…`);
 
-      // Collecter les voies pertinentes
       setAnalysisProgress(5, 'Collecte des tronçons cyclables…');
       const polylines = [];
       for (const el of lastFetchedElements) {
@@ -1076,7 +1048,6 @@ out geom;`;
         return;
       }
 
-      // Graphe
       setAnalysisProgress(12, `Construction du graphe (résolution ${sampleResolution} m)…`);
       const graph = new Map();
       const nodeCoord = new Map();
@@ -1119,7 +1090,6 @@ out geom;`;
       const allNodes = Array.from(nodeCoord.entries()).map(([id, { lat, lon }]) => ({ id, lat, lon }));
       setAnalysisProgress(30, `Noeuds générés: ${allNodes.length.toLocaleString('fr-FR')}`);
 
-      // Jointures locales
       setAnalysisProgress(35, 'Jointure des points proches…');
       const centerLat = map.getCenter().lat;
       const degLatJoin = joinThreshold / 111320;
@@ -1162,7 +1132,6 @@ out geom;`;
         }
       }
 
-      // Composantes
       setAnalysisProgress(52, 'Recherche des réseaux…');
       const visited = new Set();
       const components = [];
@@ -1186,13 +1155,11 @@ out geom;`;
         }
       }
 
-      // Index comp
       setAnalysisProgress(64, 'Préparation des réseaux…');
       const idToComp = new Map();
       components.forEach((comp, cid) => comp.forEach(n => idToComp.set(n, cid)));
       const nodesWithComp = allNodes.map(n => ({ ...n, compId: idToComp.get(n.id) }));
 
-      // Candidats (extrémités + nœuds internes espacés)
       setAnalysisProgress(68, 'Extraction des candidats de connexion…');
       const candidateSpacingMeters = Math.max(20, adv.candidateSpacingMeters ?? Math.max(60, sampleResolution));
       const compCandidates = components.map(comp =>
@@ -1211,7 +1178,6 @@ out geom;`;
       const idToIndex = new Map();
       nodesWithComp.forEach((n, i) => idToIndex.set(n.id, i));
 
-      // Appariement sur candidats
       setAnalysisProgress(75, 'Recherche des gaps inter-réseaux…');
       const totalPairs = (components.length * (components.length - 1)) / 2;
       let pairCount = 0;
@@ -1251,7 +1217,6 @@ out geom;`;
         }
       }
 
-      // Nettoyage des suggestions
       setAnalysisProgress(92, 'Nettoyage des suggestions…');
       const redundancyTolerance = 8; // m
       const C = components.length;
@@ -1303,7 +1268,6 @@ out geom;`;
       }
       suggestions = Array.from(bestByPair.values());
 
-      // Filtre utilité
       const compSizes = components.map(c => c.size || 0);
       const maxComponentSize = compSizes.length ? Math.max(...compSizes) : 0;
 
@@ -1319,7 +1283,6 @@ out geom;`;
         });
       }
 
-      // Affichage
       setAnalysisProgress(97, 'Affichage des gaps…');
       suggestionLines.forEach(l => map.removeLayer(l));
       suggestionLines = [];
@@ -1419,7 +1382,6 @@ out geom;`;
       });
     }
 
-    // ---- Docs Macros (générées depuis macros) ----
     function renderMacroDocs() {
       const blocks = Object.entries(macros).map(([key, def]) => {
         const docList = (def.doc || []).map(d => `<li><code>${d}</code></li>`).join('');
@@ -1437,7 +1399,6 @@ out geom;`;
       macroDocsContent.innerHTML = blocks;
     }
 
-    // ---- Écouteurs ----
     searchButton.addEventListener('click', handleSearch);
     searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(); });
 
@@ -1446,6 +1407,7 @@ out geom;`;
       const group = L.featureGroup(featureLayers);
       map.fitBounds(group.getBounds().pad(0.1));
     });
+
     newSearchButton.addEventListener('click', () => {
       searchPanel.classList.remove('hidden');
       newSearchButton.classList.add('hidden');
@@ -1453,16 +1415,18 @@ out geom;`;
       resultsCounter.classList.add('hidden');
       errorDisplay.classList.add('hidden');
       analysisPanel.classList.add('hidden');
+      // NOUVEAU: Cacher aussi le bouton pour ré-afficher
+      showAnalysisPanelBtn.classList.add('hidden');
     });
 
-    document.getElementById('startAnalysis').addEventListener('click', runNetworkGapsAnalysis);
-    document.getElementById('zoomGaps').addEventListener('click', () => {
+    startAnalysis.addEventListener('click', runNetworkGapsAnalysis);
+    zoomGaps.addEventListener('click', () => {
       const all = [...suggestionLines, ...gapMarkers];
       if (all.length === 0) return;
       const grp = L.featureGroup(all);
       map.fitBounds(grp.getBounds().pad(0.2));
     });
-    document.getElementById('clearGaps').addEventListener('click', () => {
+    clearGapsBtn.addEventListener('click', () => {
       suggestionLines.forEach(l => map.removeLayer(l));
       suggestionLines = [];
       gapMarkers.forEach(m => map.removeLayer(m));
@@ -1494,6 +1458,18 @@ out geom;`;
     macroDocsModal.addEventListener('click', (e) => {
       if (e.target === macroDocsModal) macroDocsModal.classList.add('hidden');
     });
+
+    // NOUVEAU: Écouteurs pour cacher/afficher le panneau d'analyse
+    hideAnalysisPanelBtn.addEventListener('click', () => {
+      analysisPanel.classList.add('hidden');
+      showAnalysisPanelBtn.classList.remove('hidden');
+    });
+
+    showAnalysisPanelBtn.addEventListener('click', () => {
+      analysisPanel.classList.remove('hidden');
+      showAnalysisPanelBtn.classList.add('hidden');
+    });
   </script>
 </body>
 </html>
+
